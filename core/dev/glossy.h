@@ -248,6 +248,12 @@ rtimer_clock_t get_T_slot_h(void);
 rtimer_clock_t glossy_get_t_ref(void);
 
 /**
+ * \brief            Get high-frequency offset of the reference time.
+ * \returns          High-frequency offset
+ */
+rtimer_clock_t glossy_get_T_offset_h(void);
+
+/**
  * \brief            Provide information about current synchronization status.
  * \returns          Not zero if the synchronization reference time was
  *                   updated during the last Glossy phase, zero otherwise.

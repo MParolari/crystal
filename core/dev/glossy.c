@@ -584,6 +584,10 @@ rtimer_clock_t glossy_get_t_ref(void) {
   return t_ref_l;
 }
 
+rtimer_clock_t glossy_get_T_offset_h(void) {
+  return T_offset_h;
+}
+
 void set_t_ref_l(rtimer_clock_t t) {
   t_ref_l = t;
 }
