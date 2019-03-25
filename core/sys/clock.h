@@ -110,6 +110,16 @@ CCIF unsigned long clock_seconds(void);
 
 void etimer_interrupt(void);
 
+/**
+ * Get the timer overflow counter.
+ * 
+ * This function returns how many overflows occurred since the clock
+ * library initialization.
+ * 
+ * \return The number of overflows occurred until now.
+ */
+unsigned long get_timer_overflow(void);
+
 #endif /* __CLOCK_H__ */
 
 /** @} */

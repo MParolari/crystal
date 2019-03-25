@@ -52,16 +52,21 @@
 #define MAX_TICKS (~((clock_time_t)0) / 2)
 
 static volatile unsigned long seconds;
+static volatile unsigned long timer_overflow = 0;
 
 static volatile clock_time_t count = 0;
 /* last_tar is used for calculating clock_fine, last_ccr might be better? */
 static unsigned short last_tar = 0;
 /*---------------------------------------------------------------------------*/
 interrupt(TIMERA1_VECTOR) timera1 (void) {
-#if !DISABLE_ETIMER
   ENERGEST_ON(ENERGEST_TYPE_IRQ);
+  unsigned short taiv = TAIV;
 
-  if(TAIV == 2) {
+  // update timer overflow counter
+  if (taiv == TAIV_TAIFG) { ++timer_overflow; }
+
+#if !DISABLE_ETIMER
+  if(taiv == 2) {
 	  etimer_interrupt();
 	  if(etimer_pending() &&
 	     (etimer_next_expiration_time() - count - 1) > MAX_TICKS) {
@@ -69,9 +74,9 @@ interrupt(TIMERA1_VECTOR) timera1 (void) {
 	    LPM4_EXIT;
 	  }
    }
+#endif // DISABLE_ETIMER
 
   ENERGEST_OFF(ENERGEST_TYPE_IRQ);
-#endif // DISABLE_ETIMER
 }
 
 void etimer_interrupt(void) {
@@ -159,10 +164,14 @@ clock_init(void)
   TACCR1 = INTERVAL;
 #endif // DISABLE_ETIMER
 
+  /* Enable TAIFG interrupt, that occurs when the timer overflows */
+  TACTL |= TAIE;
+
   /* Start Timer_A in continuous mode. */
   TACTL |= MC1;
 
   count = 0;
+  timer_overflow = 0;
 
   /* Enable interrupts. */
   eint();
@@ -224,3 +233,13 @@ clock_counter(void)
   return TAR;
 }
 /*---------------------------------------------------------------------------*/
+unsigned long
+get_timer_overflow(void)
+{
+  unsigned long t1, t2;
+  do {
+    t1 = timer_overflow;
+    t2 = timer_overflow;
+  } while(t1 != t2);
+  return t1;
+}

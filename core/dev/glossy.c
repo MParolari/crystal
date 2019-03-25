@@ -341,6 +341,7 @@ static inline void glossy_disable_other_interrupts(void) {
   DMA2CTL &= ~DMAIE;
   // disable etimer interrupts
   TACCTL1 &= ~CCIE;
+  TACTL &= ~TAIE;
   TBCCTL0 = 0;
   DISABLE_FIFOP_INT();
   CLEAR_FIFOP_INT();
@@ -371,6 +372,7 @@ static inline void glossy_enable_other_interrupts(void) {
   }
 #endif
 #endif // DISABLE_ETIMER
+  TACTL |= TAIE;
   DISABLE_SFD_INT();
   CLEAR_SFD_INT();
   FIFOP_INT_INIT();
