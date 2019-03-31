@@ -1,34 +1,57 @@
+#!/usr/bin/env Rscript
 
-#TODO proper conversion in seconds or microseconds
-#TODO general stats (max abs skew, mean, std deviation, ecc.)
-#TODO general efficiency
-
-library(ggplot2)
-
+# This script takes logged timestamps of VHT and computes the skew along with
+# some statistical properties (like mean and standard deviation).
+# ggplot2 is required for plots
 
 # RTimer (32kHz clock) ticks every second
 RTIMER_SECONDS <- 32768
 # DCO ticks every RTimer ticks
 CLOCK_PHI <- 128
-# epoch duration in seconds
+# Epoch duration in seconds
 EPOCH_DUR <- 1
-# system should be synced after this epoch (only epochs after this are plotted)
-FIRST_EPOCH <- 5
+# System should be synced after this epoch (only epochs after this are plotted)
+FIRST_EPOCH <- 60
+# If true, outputs will be in microseconds
+MICROSECONDS_CONV <- T
+# Input filename
+LOG_FILENAME <- "clock.log"
+# Output pdf filename
+PLOT_FILENAME <- "clock.pdf"
 
 # read parsed log file
+message("Read input: ", LOG_FILENAME)
 fields <- c("epoch", "time", "src", "t_ref_h")
-data = read.table("clock.log", h=T)[fields]
-# time conversion in 10^-6 seconds
-#data$t_ref_h = data$t_ref_h / CLOCK_PHI / RTIMER_SECONDS * 10^6
+data <- read.table(LOG_FILENAME, header=T)[fields]
 
-# allocate some new columns
-data$out_of_sync <- array(dim=length(data$time))
-data$diff_t_ref_h <- array(dim=length(data$time))
-data$skew <- array(dim=length(data$time))
-data$centered_skew <- array(dim=length(data$time))
+# time conversion in 10^-6 seconds
+if (MICROSECONDS_CONV) {
+	message("Conversion in microseconds")
+	# from ticks to microseconds
+	data$t_ref_h <- data$t_ref_h / CLOCK_PHI / RTIMER_SECONDS * 10^6
+	# from seconds to microseconds
+	EPOCH_DUR <- EPOCH_DUR * 10^6
+	# time/skew unit for output label/log
+	TIME_UNIT <- "(micro-seconds)"
+} else {
+	# with output in number of number of ticks, convert from seconds to ticks
+	EPOCH_DUR <- EPOCH_DUR * CLOCK_PHI * RTIMER_SECONDS
+	# default time/skew unit for output label/log
+	TIME_UNIT <- "(VHT ticks)"
+}
+
+# allocate some new columns in main data structure
+data$out_of_sync <- NA
+data$diff_t_ref_h <- NA
+data$skew <- NA
+data$centered_skew <- NA
+
+# allocate data.frame for stats
+stats <- data.frame(src=sort(unique(data$src)), max=NA, mean=NA, sd=NA)
+
 # clock skew computing (for each node)
-for (node in sort(unique(data$src))) {
-	cat("computing skew for node", node, "\n")
+for (node in stats$src) {
+	message("Computing skew for node ", node)
 	cleaning <- TRUE
 	# clean the dataset from wrong samples (ie ref_time (i) is < ref_time (i-1))
   	while (cleaning) {
@@ -36,7 +59,7 @@ for (node in sort(unique(data$src))) {
 		# get valid entries (the ones that have a timestamp != 0)
 		# and use diff on timestamps, negative values are the wrong samples,
 		# so get a boolean array and delete them
-		b <- c(FALSE, (diff(data[(data$src==node)&(data$t_ref_h!=0),]$t_ref_h) < 0))
+		b <- c(FALSE, diff(data[(data$src==node)&(data$t_ref_h!=0),]$t_ref_h)<0)
 		# if there are some wrong samples
 		if (!all(!b)) {
 			# wrong values are overwritten with 0 (and so not considered later)
@@ -44,7 +67,7 @@ for (node in sort(unique(data$src))) {
 			cleaning <- TRUE # clean again....
 		}
 	}; rm(cleaning, b)
-	# get valid entries (the ones that have a timestamp != 0) (for the last time)
+	# get valid entries (the ones that have a timestamp != 0)
 	x <- data[(data$src==node)&(data$t_ref_h!=0),]
 	# difference between epochs
 	x$ediff <- c(1,diff(x$epoch))
@@ -52,49 +75,61 @@ for (node in sort(unique(data$src))) {
 	x$tdiff <- c(0,diff(x$t_ref_h))
 	# compute the skew as the difference between timestamps over
 	# the difference between epochs ("local clock" / "real global clock")
-	x$skew <- x$tdiff / (x$ediff * EPOCH_DUR * CLOCK_PHI * RTIMER_SECONDS)
-	# compute the average skew (not considering the first unrealible values)
-	m <- mean(x[x$epoch>=FIRST_EPOCH,]$skew)
+	# minus the epoch duration
+	x$skew <- x$tdiff / x$ediff - EPOCH_DUR
+	# get only "realiable" epochs
+	y <- x[x$epoch>=FIRST_EPOCH,]
+	# compute and save stats
+	my <- mean(y$skew)
+	stats[stats$src==node,]$max <- max(abs(y$skew - my))
+	stats[stats$src==node,]$mean <- my
+	stats[stats$src==node,]$sd <- sd(y$skew)
 	# save results (missing entries should be NA)
 	data[(data$src==node)&(data$t_ref_h!=0),]$out_of_sync <- x$ediff
 	data[(data$src==node)&(data$t_ref_h!=0),]$diff_t_ref_h <- x$tdiff
 	data[(data$src==node)&(data$t_ref_h!=0),]$skew <- x$skew
-	data[(data$src==node)&(data$t_ref_h!=0),]$centered_skew <- x$skew - m
-}; rm(node, x, m)
+	data[(data$src==node)&(data$t_ref_h!=0),]$centered_skew <- x$skew - my
+}; rm(node, x, y, my)
+
+# stats are printed on stdout
+cat("Clock skew stats",TIME_UNIT,"\n")
+print(stats)
+
+
 
 ################################################################################
 # Plots
 ################################################################################
+library(ggplot2)
 
 # delete NA and initial epochs
 data <- data[!is.na(data$skew)&(data$epoch>=FIRST_EPOCH),]
 
-pdf("clock.pdf")
+# open pdf
+pdf(PLOT_FILENAME)
 
-print("clock skew")
-skew_plot <- ggplot(data=data, aes(x=epoch, y=skew, color=factor(src))) + #theme_bw() +
+message("Plot clock skew")
+skew_plot <- ggplot(data=data, aes(x=epoch, y=skew, color=factor(src))) +
 	geom_line() +
-	geom_point() +
-	ggtitle("clock skew")
+	ggtitle("clock skew") + ylab(paste("skew",TIME_UNIT))
 print(skew_plot)
 
-print("centered clock skew")
-centered_skew_plot <- ggplot(data=data, aes(x=factor(src), y=centered_skew, color=factor(src))) + #theme_bw() +
-	geom_boxplot(aes(group=src)) + theme (legend.position="none") +
-	stat_summary(fun.y=mean, geom="point", color="black", shape=23) +
-	stat_summary(geom="errorbar", color="black",
-		fun.ymin = function(x) mean(x) - sd(x),
-		fun.ymax = function(x) mean(x) + sd(x)) +
-	ggtitle("centered clock skew")
+message("Plot centered clock skew")
+centered_skew_plot <- ggplot() + theme(legend.position="none") +
+	geom_boxplot(data=data,
+		aes(x=factor(src), y=centered_skew, color=factor(src), group=src)) +
+	geom_errorbar(data=stats, color="black",
+		aes(x=factor(src), ymin=-sd, ymax=sd)) +
+	ggtitle("centered clock skew") + ylab(paste("skew",TIME_UNIT))
 print(centered_skew_plot)
 
 # plots for each node
-for (node in sort(unique(data$src))) {
-	print(paste("centered clock skew node",node))
-	centered_skew_node_plot <- ggplot(data=data[(data$src==node),], aes(x=epoch, y=centered_skew)) + #theme_bw() +
+for (node in stats$src) {
+	message("Plot clock skew for node ", node)
+	skew_node_plot <-
+		ggplot(data=data[(data$src==node),], aes(x=epoch, y=skew)) +
 		geom_line() +
-		#geom_point() +
-		ggtitle(paste("centered clock skew node",node))
-	print(centered_skew_node_plot)
+		ggtitle(paste("clock skew node",node)) + ylab(paste("skew",TIME_UNIT))
+	print(skew_node_plot)
 }
 
