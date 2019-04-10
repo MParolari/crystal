@@ -128,6 +128,9 @@ pdf(PLOT_FILENAME)
 message("Plot clock skew")
 skew_plot <- ggplot(data=data, aes(x=epoch, y=skew, color=factor(src))) +
 	geom_line() +
+	geom_text(data=data[data$epoch==data$epoch[1],], check_overlap=F,
+		aes(x=max(data$epoch)*(1+1/30), y=skew, label=src), show.legend=F) +
+	theme(legend.position="none") +
 	ggtitle("clock skew") + ylab(paste("skew",TIME_UNIT))
 print(skew_plot)
 
