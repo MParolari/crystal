@@ -2,7 +2,8 @@
 
 # This script takes logged timestamps of VHT and computes the skew along with
 # some statistical properties (like mean and standard deviation).
-# ggplot2 is required for plots
+# 'ggplot2' library is required for plots
+# 'moments' library is required for extra stats (like skewness and kurtosis)
 
 # RTimer (32kHz clock) ticks every second
 RTIMER_SECONDS <- 32768
@@ -18,6 +19,9 @@ MICROSECONDS_CONV <- T
 LOG_FILENAME <- "clock.log"
 # Output pdf filename
 PLOT_FILENAME <- "clock.pdf"
+
+# try to load functions for extra stats
+EXTRA_STATS <- require(moments)
 
 # read parsed log file
 message("Read input: ", LOG_FILENAME)
@@ -48,6 +52,11 @@ data$centered_skew <- NA
 
 # allocate data.frame for stats
 stats <- data.frame(src=sort(unique(data$src)), max=NA, mean=NA, sd=NA)
+# allocate for extra stats (if they can be computed)
+if (EXTRA_STATS) {
+	stats$sk <- NA
+	stats$ku <- NA
+}
 
 # clock skew computing (for each node)
 for (node in stats$src) {
@@ -84,6 +93,10 @@ for (node in stats$src) {
 	stats[stats$src==node,]$max <- max(abs(y$skew - my))
 	stats[stats$src==node,]$mean <- my
 	stats[stats$src==node,]$sd <- sd(y$skew)
+	if (EXTRA_STATS) {
+		stats[stats$src==node,]$sk <- skewness(y$skew)
+		stats[stats$src==node,]$ku <- kurtosis(y$skew)
+	}
 	# save results (missing entries should be NA)
 	data[(data$src==node)&(data$t_ref_h!=0),]$out_of_sync <- x$ediff
 	data[(data$src==node)&(data$t_ref_h!=0),]$diff_t_ref_h <- x$tdiff
