@@ -35,11 +35,15 @@ if (MICROSECONDS_CONV) {
 	data$t_ref_h <- data$t_ref_h / CLOCK_PHI / RTIMER_SECONDS * 10^6
 	# from seconds to microseconds
 	EPOCH_DUR <- EPOCH_DUR * 10^6
+	# binwidth for histograms
+	HIST_BINWIDTH <- 1 / CLOCK_PHI / RTIMER_SECONDS * 10^6
 	# time/skew unit for output label/log
 	TIME_UNIT <- "(micro-seconds)"
 } else {
 	# with output in number of number of ticks, convert from seconds to ticks
 	EPOCH_DUR <- EPOCH_DUR * CLOCK_PHI * RTIMER_SECONDS
+	# default binwidth for histograms
+	HIST_BINWIDTH <- 1
 	# default time/skew unit for output label/log
 	TIME_UNIT <- "(VHT ticks)"
 }
@@ -144,5 +148,13 @@ for (node in stats$src) {
 		geom_line() +
 		ggtitle(paste("clock skew node",node)) + ylab(paste("skew",TIME_UNIT))
 	print(skew_node_plot)
-}
+
+	message("Plot histogram skew for node ", node)
+	hist_skew_node_plot <-
+		ggplot(data=data[(data$src==node),], aes(x=skew)) +
+		geom_histogram(binwidth=HIST_BINWIDTH) +
+		ggtitle(paste("histogram skew node",node)) + ylab("frequency")
+	print(hist_skew_node_plot)
+}; rm(node)
+
 
