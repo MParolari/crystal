@@ -17,6 +17,7 @@ FIRST_EPOCH <- 60
 MICROSECONDS_CONV <- T
 # Input filename
 LOG_FILENAME <- "clock.log"
+PARAMS_FILENAME <- "params_tbl.txt"
 # Output pdf filename
 PLOT_FILENAME <- "clock.pdf"
 
@@ -108,10 +109,24 @@ for (node in stats$src) {
 	data[(data$src==node)&(data$t_ref_h!=0),]$centered_skew <- x$skew - my
 }; rm(node, x, y, my)
 
-# stats are printed on stdout
-cat("Clock skew stats",TIME_UNIT,"\n")
-print(stats)
+# stats are printed on stdout (commented, for user)
+cat("#\n# Clock skew stats",TIME_UNIT,"\n#\n")
+writeLines(paste("#", capture.output(print(stats))))
 
+# if the unit is still in VHT-ticks, output data for later analysis
+if (!MICROSECONDS_CONV) {
+	# read the sink id from parameters
+	sink_id = read.table(PARAMS_FILENAME, header=T)$sink[1]
+	# add a column with the sink id reference
+	stats$sink <- sink_id
+	# write sink, nodes and estimated skew mean
+	cat("#\n# Table for later analysis\n#\n")
+	cat("sink\tnode\tskew\n")
+	write.table(stats[,c("sink","src","mean")], col.names=F, row.names=F)
+	cat("#\n")
+	# delete the sink id column
+	stats$sink <- NULL
+} else { cat("#\n# Table for later analysis not printed\n#\n") }
 
 
 ################################################################################
