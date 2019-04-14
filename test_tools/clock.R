@@ -18,7 +18,7 @@ MICROSECONDS_CONV <- T
 # Input filename
 LOG_FILENAME <- "clock.log"
 PARAMS_FILENAME <- "params_tbl.txt"
-# Output pdf filename
+# Output pdf filename (an empty string disables plot printing)
 PLOT_FILENAME <- "clock.pdf"
 
 # try to load functions for extra stats
@@ -132,6 +132,12 @@ if (!MICROSECONDS_CONV) {
 ################################################################################
 # Plots
 ################################################################################
+
+# if filename for plots isn't defined, simply quit
+if ((!exists("PLOT_FILENAME")) || (!is.character(PLOT_FILENAME))
+	|| (PLOT_FILENAME == "")) quit()
+
+# load library
 library(ggplot2)
 
 # delete NA and initial epochs
