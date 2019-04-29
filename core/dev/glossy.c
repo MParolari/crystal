@@ -66,6 +66,7 @@ static unsigned long rtx_when_started;
 static uint16_t cca_last_check, cca_busy_cnt;
 static uint16_t volatile cca_counting;
 static rtimer_clock_t t_start_l;
+static rtimer_clock_t t_start_offset_h;
 static uint8_t channel, app_header, rx_data_len, rx_bad_crc;
 static uint8_t expected_header;
 
@@ -411,6 +412,10 @@ char start_rx_handler(struct rtimer *t, void *ptr) {
 }
 
 char glossy_prepare_handler(struct rtimer *t, void *ptr) {
+  rtimer_clock_t t_cap;
+  rtimer_clock_t timeout_h;
+  unsigned char of;
+
   //leds_on(LEDS_GREEN);
   rtx_when_started = energest_type_time(ENERGEST_TYPE_LISTEN) + energest_type_time(ENERGEST_TYPE_TRANSMIT);
   
@@ -436,7 +441,46 @@ char glossy_prepare_handler(struct rtimer *t, void *ptr) {
       glossy_state = GLOSSY_STATE_OFF; // too late to start
     }
     else {
-      rtimer_set(rtimer, t_start_l, 0, start_tx_handler, NULL);
+      // enable capture mode for both timers B6 and A2
+      TBCCTL6 = CCIS0 | CM_POS | CAP | SCS;
+      TACCTL2 = CCIS0 | CM_POS | CAP | SCS;
+
+      // RTimer busy loop (wait until A2 timer capture the tick before timeout)
+      do {
+        TACCTL2 &= ~CCIFG; // clear flag
+        while (!(TACCTL2 & CCIFG)); // wait for capture
+        t_cap = TACCR2; // save the capture value
+      } while (t_start_l - 1 != t_cap);
+      // clear flags
+      TACCTL2 &= ~CCIFG;
+      TBCCTL6 &= ~CCIFG;
+
+      // wait until both timers capture the next clock tick
+      while (!((TBCCTL6 & CCIFG) && (TACCTL2 & CCIFG)));
+      // Store the captured timer value
+      t_cap = TBCCR6;
+
+      // DCO busy loop
+      timeout_h = t_cap + t_start_offset_h;
+      of = timeout_h < t_cap; // if timeout overflowed
+      do {
+        TBCCTL6 &= ~CCIFG;
+        while(!(TBCCTL6 & CCIFG));
+        t_cap = TBCCR6;
+      } while (t_cap < timeout_h || (of && t_cap <= ~((rtimer_clock_t)0) ));
+      // disable capture mode for B6 and A2
+      TBCCTL6 = 0;
+      TACCTL2 = 0;
+
+      // start_tx_handler() body
+      // start the first transmission
+      t_start = RTIMER_NOW_DCO();
+      radio_start_tx();
+      // schedule the initiator timeout
+      if ((!sync) || T_slot_h) {
+        n_timeouts = 0;
+        glossy_schedule_initiator_timeout();
+      }
     }
   } else {
     //rtimer_set(rtimer, t_start_l, 0, start_rx_handler, NULL);
@@ -457,7 +501,8 @@ void glossy_start(struct glossy *glossy_,
     uint8_t channel_,
     uint8_t sync_, uint8_t tx_max_, uint8_t stop_on_sync_,
     uint8_t header_,
-    rtimer_clock_t t_start_, rtimer_clock_t t_stop_, rtimer_callback_t cb_,
+    rtimer_clock_t t_start_, rtimer_clock_t t_start_offset_,
+    rtimer_clock_t t_stop_, rtimer_callback_t cb_,
     struct rtimer *rtimer_, void *ptr_) {
   // copy function arguments to the respective Glossy variables
   //leds_on(LEDS_YELLOW);
@@ -474,6 +519,7 @@ void glossy_start(struct glossy *glossy_,
   tx_max = tx_max_;
   t_stop = t_stop_;
   t_start_l = t_start_;
+  t_start_offset_h = t_start_offset_;
   cb = cb_;
   rtimer = rtimer_;
   ptr = ptr_;

@@ -170,6 +170,7 @@ PROCESS_NAME(glossy_process);
  * \param header_    Ignore app header of received packets (receive everything)
  * \param t_start_   Time instant at which Glossy must turn on the radio
  *                   (and send the packet if initiator)
+ * \param t_start_offset_ High frequency offset (DCO ticks) of t_start_
  * \param t_stop_    Time instant at which Glossy must stop, in case it is
  *                   still running.
  * \param cb_        Callback function, called when Glossy terminates its
@@ -181,7 +182,8 @@ void glossy_start(struct glossy *glossy_,
     uint8_t *data_, uint8_t data_len_, uint8_t initiator_, uint8_t channel_,
     uint8_t sync_, uint8_t tx_max_, uint8_t stop_on_sync_,
     uint8_t header_,
-    rtimer_clock_t t_start_, rtimer_clock_t t_stop_, rtimer_callback_t cb_,
+    rtimer_clock_t t_start_, rtimer_clock_t t_start_offset_,
+    rtimer_clock_t t_stop_, rtimer_callback_t cb_,
     struct rtimer *rtimer_, void *ptr_);
 
 /**
