@@ -146,6 +146,7 @@ static rtimer_clock_t t_ref_skewed;      // reference time in the local time fra
 static rtimer_clock_t t_wakeup;          // Time to wake up to prepare for the next epoch
 static rtimer_clock_t t_s_start, t_s_stop;        // Start/stop times for S slots
 static rtimer_clock_t t_slot_start, t_slot_stop;  // Start/stop times for T and A slots
+static rtimer_clock_t t_slot_start_offset;        // Start time offset (high frequency DCO ticks)
 
 static uint16_t correct_packet; // whether the received packet is correct
 static uint16_t sleep_order;    // sink sent the sleep command
@@ -293,7 +294,7 @@ static inline void log_ta(int tx) {
 
 #if CRYSTAL_2420
 #define GLOSSY(glossy_obj, init_id, length, type_, ntx, channel, is_sync, stop_on_sync, pt) \
-glossy_start(glossy_obj, buf.raw, length, init_id==node_id?GLOSSY_INITIATOR:GLOSSY_RECEIVER, channel, is_sync, ntx, stop_on_sync, type_, t_slot_start, t_slot_stop, timer_handler, &rt, ptr)
+glossy_start(glossy_obj, buf.raw, length, init_id==node_id?GLOSSY_INITIATOR:GLOSSY_RECEIVER, channel, is_sync, ntx, stop_on_sync, type_, t_slot_start, t_slot_start_offset, t_slot_stop, timer_handler, &rt, ptr)
 
 #define GLOSSY_WAIT(pt) PT_YIELD(pt); recv_pkt_type = get_app_header(); glossy_stop();
 #endif
