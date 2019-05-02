@@ -187,6 +187,9 @@ static inline void measure_noise();
 // for VHT timestamp resolution and skew correction
 typedef uint64_t time_h_t; // high-resolution timestamps type (unsigned)
 typedef int32_t skew_t; // high-resolution time difference type (signed)
+static time_h_t t_ref_estimated_h;   // estimated reference time for the current epoch
+static time_h_t t_ref_corrected_h_s; // reference time acquired during the S slot of the current epoch
+static time_h_t t_ref_corrected_h;   // reference time acquired during the S or an A slot of the current epoch
 
 // since RTimer is 32kHz and DCO 4MHz: (4MHz / 32kHz == 128 == CLOCK_PHI), so
 // 7bit are enough for the high reference offset; in practice we have:
@@ -618,6 +621,7 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         n_ta = 0;
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref();
+          t_ref_corrected_h = TIME_H_T(get_timer_overflow(), t_ref_corrected, glossy_get_T_offset_h());
           successful_scan = 1;
           break; // exit the scanning
         }
@@ -634,6 +638,8 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref() - PHASE_A_OFFS(n_ta);
+          t_ref_corrected_h = TIME_H_T(get_timer_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
+            - LOW_TO_TIME_H(PHASE_A_OFFS(n_ta));
           successful_scan = 1;
           break; // exit the scanning
         }
@@ -716,12 +722,26 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
     t_ref_skewed = t_ref_corrected_s;
     ever_synced_with_s = 1;
     sync_missed = 0;
+
+    // get the corrected reference time in high-resolution
+    time_h_t tmp_h = TIME_H_T(get_timer_overflow(), t_ref_corrected, glossy_get_T_offset_h());
+    // check if the new ref is valid
+    if (tmp_h > t_ref_corrected_h) {
+      t_ref_corrected_h_s = tmp_h;
+      t_ref_corrected_h = tmp_h;
+    }
+    else { // use the estimate if didn't update
+      t_ref_corrected_h = t_ref_estimated_h;
+      t_ref_corrected_h_s = t_ref_estimated_h;
+    }
   }
   else {
     sync_missed++;
     t_ref_skewed += conf.period;
     t_ref_corrected = t_ref_estimated; // use the estimate if didn't update
     t_ref_corrected_s = t_ref_estimated;
+    t_ref_corrected_h = t_ref_estimated_h;
+    t_ref_corrected_h_s = t_ref_estimated_h;
   }
 
   app_post_S(correct_packet, buf.raw + CRYSTAL_S_HDR_LEN);
@@ -742,6 +762,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     static int guard;
     static uint16_t have_packet;
     static int i_tx;
+    static time_h_t tmp_h;
 
     init_ta_log_vars();
     crystal_info.n_ta = n_ta;
@@ -763,7 +784,10 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
       // guards for receiving
       guard = (sync_missed && !synced_with_ack)?CRYSTAL_SHORT_GUARD_NOSYNC:CRYSTAL_SHORT_GUARD;
     }
-    t_slot_start = t_ref_corrected + PHASE_T_OFFS(n_ta) - CRYSTAL_REF_SHIFT - guard;
+    tmp_h = t_ref_corrected_h + LOW_TO_TIME_H(PHASE_T_OFFS(n_ta))
+      - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(guard);
+    t_slot_start = GET_LOW_REF(tmp_h);
+    t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_slot_stop = t_slot_start + conf.w_T + guard;
 
     //choice of the channel for each T-A slot
@@ -810,7 +834,10 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
 
     correct_packet = 0;
     guard = (sync_missed && !synced_with_ack)?CRYSTAL_SHORT_GUARD_NOSYNC:CRYSTAL_SHORT_GUARD;
-    t_slot_start = t_ref_corrected - guard + PHASE_A_OFFS(n_ta) - CRYSTAL_REF_SHIFT;
+    tmp_h = t_ref_corrected_h + LOW_TO_TIME_H(PHASE_A_OFFS(n_ta))
+      - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(guard);
+    t_slot_start = GET_LOW_REF(tmp_h);
+    t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_slot_stop = t_slot_start + conf.w_A + guard;
 
     GLOSSY(&glossy_A, 
@@ -848,6 +875,8 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
            ) {
 
           t_ref_corrected = N_TA_TO_REF(glossy_get_t_ref(), buf.ack_hdr.n_ta);
+          t_ref_corrected_h = TIME_H_T(get_timer_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
+            - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
           synced_with_ack ++;
           n_noack_epochs = 0; // it's important to reset it here to reenable TX right away (if it was suppressed)
         }
@@ -921,6 +950,7 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
   static rtimer_clock_t offs;
   static uint16_t skip_S;        // skip the S phase (if joining in the middle of TA chain)
   static uint16_t starting_n_ta; // the first TA index in an epoch (if joining in the middle of TA chain)
+  static time_h_t tmp_h;
   PT_BEGIN(&pt);
 
   successful_scan = 0;
@@ -976,11 +1006,16 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
 
   // here we have the ref time pointing at the previous epoch
   t_ref_corrected_s = t_ref_corrected;
+  t_ref_corrected_h_s = t_ref_corrected_h;
 
   /* For S if we are not skipping it */
   t_ref_estimated = t_ref_corrected + conf.period;
+  t_ref_estimated_h = t_ref_corrected_h + LOW_TO_TIME_H(conf.period);
   t_ref_skewed = t_ref_estimated;
-  t_s_start = t_ref_estimated - CRYSTAL_REF_SHIFT - CRYSTAL_INIT_GUARD;
+  tmp_h = t_ref_estimated_h
+    - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(CRYSTAL_INIT_GUARD);
+  t_s_start = GET_LOW_REF(tmp_h);
+  t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
   t_s_stop = t_s_start + conf.w_S + 2*CRYSTAL_INIT_GUARD; 
 
   while (1) {
@@ -1013,8 +1048,16 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
     s_guard = (!skew_estimated || sync_missed >= N_MISSED_FOR_INIT_GUARD)?CRYSTAL_INIT_GUARD:CRYSTAL_LONG_GUARD;
 
     // Schedule the next epoch times
+    skew_t period_skew_h = (skew_t)(LOW_TO_TIME_H(period_skew));
+    // (period + skew) is a skew_t sum, >=0, so after that a time_h_t sum is feasible
+    // and this requires ( |skew| < |epoch| )
+    t_ref_estimated_h = t_ref_corrected_h_s
+      + (time_h_t)((skew_t)LOW_TO_TIME_H(conf.period) + period_skew_h);
     t_ref_estimated = t_ref_corrected_s + conf.period + period_skew;
-    t_s_start = t_ref_estimated - CRYSTAL_REF_SHIFT - s_guard;
+    tmp_h = t_ref_estimated_h
+      - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(s_guard);
+    t_s_start = GET_LOW_REF(tmp_h);
+    t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_s_stop = t_s_start + conf.w_S + 2*s_guard;
 
     // time to wake up to prepare for the next epoch
