@@ -26,7 +26,7 @@ EXTRA_STATS <- require(moments)
 
 # read parsed log file
 message("Read input: ", LOG_FILENAME)
-fields <- c("epoch", "time", "src", "t_ref_h")
+fields <- c("epoch", "time", "src", "t_ref_h", "skew_error")
 data <- read.table(LOG_FILENAME, header=T)[fields]
 
 # time conversion in 10^-6 seconds
@@ -34,6 +34,7 @@ if (MICROSECONDS_CONV) {
 	message("Conversion in microseconds")
 	# from ticks to microseconds
 	data$t_ref_h <- data$t_ref_h / CLOCK_PHI / RTIMER_SECONDS * 10^6
+	data$skew_error <- data$skew_error / CLOCK_PHI / RTIMER_SECONDS * 10^6
 	# from seconds to microseconds
 	EPOCH_DUR <- EPOCH_DUR * 10^6
 	# binwidth for histograms
@@ -57,6 +58,7 @@ data$centered_skew <- NA
 
 # allocate data.frame for stats
 stats <- data.frame(src=sort(unique(data$src)), max=NA, mean=NA, sd=NA)
+se_stats <- data.frame(src=sort(unique(data$src)), max=NA, mean=NA, sd=NA)
 # allocate for extra stats (if they can be computed)
 if (EXTRA_STATS) {
 	stats$sk <- NA
@@ -98,6 +100,9 @@ for (node in stats$src) {
 	stats[stats$src==node,]$max <- max(abs(y$skew - my))
 	stats[stats$src==node,]$mean <- my
 	stats[stats$src==node,]$sd <- sd(y$skew)
+	se_stats[stats$src==node,]$max <- max(abs(y$skew_error))
+	se_stats[stats$src==node,]$mean <- mean(y$skew_error)
+	se_stats[stats$src==node,]$sd <- sd(y$skew_error)
 	if (EXTRA_STATS) {
 		stats[stats$src==node,]$sk <- skewness(y$skew)
 		stats[stats$src==node,]$ku <- kurtosis(y$skew)
@@ -163,6 +168,17 @@ centered_skew_plot <- ggplot() + theme(legend.position="none") +
 		aes(x=factor(src), ymin=-sd, ymax=sd)) +
 	ggtitle("centered clock skew") + ylab(paste("skew",TIME_UNIT))
 print(centered_skew_plot)
+
+message("Plot skew error")
+skew_error_plot <- ggplot() + theme(legend.position="none") +
+	geom_boxplot(data=data,
+		aes(x=factor(src), y=skew_error, color=factor(src), group=src)) +
+	geom_errorbar(data=se_stats, color="black",
+		aes(x=factor(src), ymin=mean-sd, ymax=mean+sd)) +
+	geom_point(data=se_stats, color="black", shape=23, size=3,
+		aes(x=factor(src), y=mean)) +
+	ggtitle("skew error") + ylab(paste("skew",TIME_UNIT))
+print(skew_error_plot)
 
 # plots for each node
 for (node in stats$src) {
