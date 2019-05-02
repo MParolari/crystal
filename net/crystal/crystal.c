@@ -191,6 +191,9 @@ static time_h_t t_ref_estimated_h;   // estimated reference time for the current
 static time_h_t t_ref_corrected_h_s; // reference time acquired during the S slot of the current epoch
 static time_h_t t_ref_corrected_h;   // reference time acquired during the S or an A slot of the current epoch
 
+// for clock logging and measurement
+static time_h_t log_t_ref_h_s;  // for clock skew measurement
+
 // since RTimer is 32kHz and DCO 4MHz: (4MHz / 32kHz == 128 == CLOCK_PHI), so
 // 7bit are enough for the high reference offset; in practice we have:
 // 7bit for the DCO offset, 16bit for the RTimer, the rest for the "overflow".
@@ -734,6 +737,7 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
       t_ref_corrected_h = t_ref_estimated_h;
       t_ref_corrected_h_s = t_ref_estimated_h;
     }
+    log_t_ref_h_s = tmp_h;
   }
   else {
     sync_missed++;
@@ -1021,6 +1025,7 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
   while (1) {
     init_epoch_state();
     crystal_info.n_ta = 0;
+    log_t_ref_h_s = 0;
 
     if (!skip_S) {
       RADIO_OSC_ON();
@@ -1175,6 +1180,7 @@ void crystal_print_epoch_logs() {
     printf("S %u:%u %u %u:%u %d %u\n", epoch, n_ta_tx, n_all_acks, synced_with_ack, sync_missed, period_skew, hopcount);
     printf("P %u:%u %u %u:%u %u %u %d:%d\n", 
         epoch, recvsrc_S, recvtype_S, recvlen_S, n_badtype_A, n_badlen_A, n_badcrc_A, log_ack_skew_err, 0);
+    printf("L %u %llu\n", epoch, log_t_ref_h_s);
   }
 
 #if CRYSTAL_LOGLEVEL == CRYSTAL_LOGS_ALL
