@@ -184,6 +184,24 @@ static uint16_t log_ack_skew_err;  // ACK skew estimation outlier
 static uint16_t noise_scan_channel;
 static inline void measure_noise();
 
+// for VHT timestamp resolution and skew correction
+typedef uint64_t time_h_t; // high-resolution timestamps type (unsigned)
+typedef int32_t skew_t; // high-resolution time difference type (signed)
+
+// since RTimer is 32kHz and DCO 4MHz: (4MHz / 32kHz == 128 == CLOCK_PHI), so
+// 7bit are enough for the high reference offset; in practice we have:
+// 7bit for the DCO offset, 16bit for the RTimer, the rest for the "overflow".
+#define TIME_H_T(_extra_ref, _low_ref, _high_offset) \
+  ( (time_h_t)( (time_h_t)(_extra_ref)  * 8388608lu \
+              + (time_h_t)(_low_ref)    * 128lu \
+              + (time_h_t)(_high_offset)  ) )
+
+// shortcut
+#define LOW_TO_TIME_H(_low_ref) ( TIME_H_T(0,_low_ref,0) )
+// from a time_h_t reference, get the low-resolution value (RTimer - 32kHz)
+#define GET_LOW_REF(_ref_h) ((rtimer_clock_t)((_ref_h) / 128lu))
+// from a time_h_t reference, get the high reference offset (DCO offset)
+#define GET_HIGH_OFFSET(_ref_h) ((rtimer_clock_t)((_ref_h) % 128lu))
 
 // it's important to wait the maximum possible S phase duration before starting the TAs!
 #define PHASE_S_END_OFFS (CRYSTAL_INIT_GUARD*2 + conf.w_S + CRYSTAL_INTER_PHASE_GAP)
