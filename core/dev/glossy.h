@@ -134,6 +134,9 @@ struct glossy {
 //#define GLOSSY_PRE_TIME 16 // IPSN'18 setting (very short packets)
 #define GLOSSY_PRE_TIME 26 // (works with packets of 100 bytes)
 
+// Upper bound of time for the high-resolution busy-loop
+// before initiator transmission
+#define GLOSSY_BLH_PRE_TIME 5
 
 PROCESS_NAME(glossy_process);
 
