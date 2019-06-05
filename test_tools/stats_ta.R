@@ -317,14 +317,14 @@ en_short_t = within(en_short_t, ratio_short_t <- n_short_t/n_ta)
 en_short_a = within(en_short_a, tf_a <- tf_a/n_short_a)
 en_short_a = within(en_short_a, ratio_short_a <- n_short_a/n_ta)
 
-tf_s_pernode = setNames(aggregate(tf_s ~ en_short_s$node, en_short_s, mean), c("node", "tf_s"))
+tf_s_pernode = setNames(tryCatch(aggregate(tf_s ~ en_short_s$node, en_short_s, mean), error=function(e) data.frame(matrix(vector(), 0, 2))), c("node", "tf_s"))
 tf_t_pernode = setNames(tryCatch(aggregate(tf_t ~ en_short_t$node, en_short_t, mean), error=function(e) data.frame(matrix(vector(), 0, 2))), c("node", "tf_t"))
 tf_a_pernode = setNames(tryCatch(aggregate(tf_a ~ en_short_a$node, en_short_a, mean), error=function(e) data.frame(matrix(vector(), 0, 2))), c("node", "tf_a"))
 
 
 pdf("tf.pdf", width=12, height=8)
 
-short_s_pernode = setNames(aggregate(en_short_s$n_short_s ~ en_short_s$node, en_short_s, sum), c("node", "n_short_s"))
+short_s_pernode = setNames(tryCatch(aggregate(en_short_s$n_short_s ~ en_short_s$node, en_short_s, sum), error=function(e) data.frame(matrix(vector(), 0, 2))), c("node", "n_short_s"))
 n_recv_pernode =  setNames(aggregate(s_rx_cnt>0 ~ rsum$dst, rsum, sum), c("node", "n_recv_s"))
 short_s_pernode = merge(short_s_pernode, n_recv_pernode)
 short_s_pernode = within(short_s_pernode, ratio_short_s <- n_short_s/n_recv_s)
@@ -416,7 +416,7 @@ pernode = merge(pernode, pernode_pdr, all.x=T)
 missed = setNames(tryCatch(aggregate(epoch ~ ssum$src, ssum, subset=ssum$sync_missed>0, FUN=length), error = function(e) data.frame(matrix(vector(), 0, 2))),
                   c("node", "s_missed"))
 
-received = setNames(aggregate(epoch ~ rsum$dst, rsum, subset=rsum$s_rx_cnt>0, FUN=length),
+received = setNames(tryCatch(aggregate(epoch ~ rsum$dst, rsum, subset=rsum$s_rx_cnt>0, FUN=length), error = function(e) data.frame(matrix(vector(), 0, 2))),
                   c("node", "s_received"))
 
 pernode1 = merge(received, missed, all=T)
@@ -442,7 +442,7 @@ message("Synch phase reliability stats")
 message("S_pdr: ", min_s_pdr, " ", mean_s_pdr, " ", max_s_pdr)
 message("s_pdr_total: ", min_s_pdr_total, " ", mean_s_pdr_total, " ", max_s_pdr_total)
 
-pernode_rx_cnt = setNames(aggregate(s_rx_cnt ~ rsum$dst, rsum, subset=rsum$s_rx_cnt>0, FUN=mean), c("node", "s_rx_cnt"))
+pernode_rx_cnt = setNames(tryCatch(aggregate(s_rx_cnt ~ rsum$dst, rsum, subset=rsum$s_rx_cnt>0, FUN=mean), error = function(e) data.frame(matrix(vector(), 0, 2))), c("node", "s_rx_cnt"))
 pernode = merge(pernode, pernode_rx_cnt, all.x=T)
 
 s_compl_recv = sum(rsum$s_rx_cnt>=params$n_tx_s)/(total_s_received)
