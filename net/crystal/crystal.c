@@ -194,7 +194,6 @@ static typeof(n_ta) last_n_ta;       // number of TA phase of the last (glossy) 
 
 // for clock logging and measurement
 static time_h_t log_t_ref_h_s;  // for clock skew measurement
-static skew_t log_skew_error;   // for skew log
 
 // "null" value for last_n_ta (assuming it will never reach its maximum value)
 #define NULL_N_TA ( (typeof(last_n_ta))( ~((typeof(last_n_ta))0) ) )
@@ -1043,7 +1042,6 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
     init_epoch_state();
     crystal_info.n_ta = 0;
     log_t_ref_h_s = 0;
-    log_skew_error = 0;
 
     if (!skip_S) {
       RADIO_OSC_ON();
@@ -1207,7 +1205,7 @@ void crystal_print_epoch_logs() {
     printf("S %u:%u %u %u:%u %d %u\n", epoch, n_ta_tx, n_all_acks, synced_with_ack, sync_missed, period_skew, hopcount);
     printf("P %u:%u %u %u:%u %u %u %d:%d\n", 
         epoch, recvsrc_S, recvtype_S, recvlen_S, n_badtype_A, n_badlen_A, n_badcrc_A, log_ack_skew_err, 0);
-    printf("L %u %llu %ld\n", epoch, log_t_ref_h_s, log_skew_error);
+    printf("L %u %llu %ld\n", epoch, log_t_ref_h_s, 0);
   }
 
 #if CRYSTAL_LOGLEVEL == CRYSTAL_LOGS_ALL
