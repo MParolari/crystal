@@ -193,7 +193,8 @@ static typeof(epoch) last_epoch;     // epoch of the last (glossy) synchronizati
 static typeof(n_ta) last_n_ta;       // number of TA phase of the last (glossy) synchronization
 
 // for clock logging and measurement
-static time_h_t log_t_ref_h_s;  // for clock skew measurement
+static time_h_t log_t_ref_h;         // epoch reference time for clock skew
+static typeof(n_ta) log_t_ref_ta;    // TA phase when log_t_ref_h is acquired
 
 // "null" value for last_n_ta (assuming it will never reach its maximum value)
 #define NULL_N_TA ( (typeof(last_n_ta))( ~((typeof(last_n_ta))0) ) )
@@ -392,6 +393,8 @@ static inline void init_epoch_state() { // zero out epoch-related variables
   n_all_acks = 0;
   sleep_order = 0;
   synced_with_ack = 0;
+
+  log_t_ref_h = 0;
 }
 
 // ------------------------------------------------------------- S thread (root) ---------------------------------------
@@ -746,7 +749,9 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
       last_epoch = epoch;
       last_n_ta = NULL_N_TA;
     }
-    log_t_ref_h_s = tmp_h;
+    // log the reference time
+    log_t_ref_h = tmp_h;
+    log_t_ref_ta = NULL_N_TA;
   }
   else {
     sync_missed++;
@@ -896,6 +901,11 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
             last_epoch = epoch;
             last_n_ta = n_ta;
           }
+          // log only if we didn't sync previously during this epoch
+          if (log_t_ref_h == 0) {
+            log_t_ref_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
+            log_t_ref_ta = n_ta;
+          }
           synced_with_ack ++;
           n_noack_epochs = 0; // it's important to reset it here to reenable TX right away (if it was suppressed)
         }
@@ -1041,7 +1051,6 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
   while (1) {
     init_epoch_state();
     crystal_info.n_ta = 0;
-    log_t_ref_h_s = 0;
 
     if (!skip_S) {
       RADIO_OSC_ON();
@@ -1205,7 +1214,7 @@ void crystal_print_epoch_logs() {
     printf("S %u:%u %u %u:%u %d %u\n", epoch, n_ta_tx, n_all_acks, synced_with_ack, sync_missed, period_skew, hopcount);
     printf("P %u:%u %u %u:%u %u %u %d:%d\n", 
         epoch, recvsrc_S, recvtype_S, recvlen_S, n_badtype_A, n_badlen_A, n_badcrc_A, log_ack_skew_err, 0);
-    printf("L %u %llu %ld\n", epoch, log_t_ref_h_s, 0);
+    printf("L %u %llu %u\n", epoch, log_t_ref_h, log_t_ref_ta);
   }
 
 #if CRYSTAL_LOGLEVEL == CRYSTAL_LOGS_ALL
