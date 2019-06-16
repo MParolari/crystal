@@ -26,7 +26,7 @@ EXTRA_STATS <- require(moments)
 
 # read parsed log file
 message("Read input: ", LOG_FILENAME)
-fields <- c("epoch", "time", "src", "t_ref_h", "skew_error")
+fields <- c("epoch", "time", "src", "t_ref_h", "t_ref_ta")
 data <- read.table(LOG_FILENAME, header=T)[fields]
 
 # time conversion in 10^-6 seconds
@@ -34,7 +34,6 @@ if (MICROSECONDS_CONV) {
 	message("Conversion in microseconds")
 	# from ticks to microseconds
 	data$t_ref_h <- data$t_ref_h / CLOCK_PHI / RTIMER_SECONDS * 10^6
-	data$skew_error <- data$skew_error / CLOCK_PHI / RTIMER_SECONDS * 10^6
 	# from seconds to microseconds
 	EPOCH_DUR <- EPOCH_DUR * 10^6
 	# binwidth for histograms
@@ -68,8 +67,16 @@ if (EXTRA_STATS) {
 # clock skew computing (for each node)
 for (node in stats$src) {
 	message("Computing skew for node ", node)
-	cleaning <- TRUE
+	# get valid TA entries (the ones that have a timestamp != 0)
+	x <- data[(data$src==node)&(data$t_ref_h!=0),]$t_ref_ta
+	# get the most used synchronization phase (ie most frequent TA number)
+	tas <- unique(x)
+	ta <- tas[which.max(tabulate(match(x, tas)))]
+	# keep only the samples acquired every epoch at the same phase,
+	# while wrong values are overwritten with 0 (and so not considered later)
+	data[(data$src==node)&(data$t_ref_h!=0),]$t_ref_h[x!=ta] <- 0
 	# clean the dataset from wrong samples (ie ref_time (i) is < ref_time (i-1))
+	cleaning <- TRUE
   	while (cleaning) {
 		cleaning <- FALSE
 		# get valid entries (the ones that have a timestamp != 0)
@@ -100,9 +107,6 @@ for (node in stats$src) {
 	stats[stats$src==node,]$max <- max(abs(y$skew - my))
 	stats[stats$src==node,]$mean <- my
 	stats[stats$src==node,]$sd <- sd(y$skew)
-	se_stats[stats$src==node,]$max <- max(abs(y$skew_error))
-	se_stats[stats$src==node,]$mean <- mean(y$skew_error)
-	se_stats[stats$src==node,]$sd <- sd(y$skew_error)
 	if (EXTRA_STATS) {
 		stats[stats$src==node,]$sk <- skewness(y$skew)
 		stats[stats$src==node,]$ku <- kurtosis(y$skew)
@@ -112,7 +116,7 @@ for (node in stats$src) {
 	data[(data$src==node)&(data$t_ref_h!=0),]$diff_t_ref_h <- x$tdiff
 	data[(data$src==node)&(data$t_ref_h!=0),]$skew <- x$skew
 	data[(data$src==node)&(data$t_ref_h!=0),]$centered_skew <- x$skew - my
-}; rm(node, x, y, my)
+}; rm(node, ta, tas, x, y, my)
 
 # stats are printed on stdout (commented, for user)
 cat("#\n# Clock skew stats",TIME_UNIT,"\n#\n")
@@ -168,17 +172,6 @@ centered_skew_plot <- ggplot() + theme(legend.position="none") +
 		aes(x=factor(src), ymin=-sd, ymax=sd)) +
 	ggtitle("centered clock skew") + ylab(paste("skew",TIME_UNIT))
 print(centered_skew_plot)
-
-message("Plot skew error")
-skew_error_plot <- ggplot() + theme(legend.position="none") +
-	geom_boxplot(data=data,
-		aes(x=factor(src), y=skew_error, color=factor(src), group=src)) +
-	geom_errorbar(data=se_stats, color="black",
-		aes(x=factor(src), ymin=mean-sd, ymax=mean+sd)) +
-	geom_point(data=se_stats, color="black", shape=23, size=3,
-		aes(x=factor(src), y=mean)) +
-	ggtitle("skew error") + ylab(paste("skew",TIME_UNIT))
-print(skew_error_plot)
 
 # plots for each node
 for (node in stats$src) {
