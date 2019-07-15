@@ -62,6 +62,7 @@ T = re.compile(record_pattern%"T (?P<epoch>\d+):(?P<n_ta>\d+) (?P<status>\d+):(?
 E = re.compile(record_pattern%"E (?P<epoch>\d+):(?P<ontime>[\d\.]+):(?P<ton_s>\d+) (?P<ton_t>\d+) (?P<ton_a>\d+)")
 F = re.compile(record_pattern%"F (?P<epoch>\d+):(?P<tf_s>\d+) (?P<tf_t>\d+) (?P<tf_a>\d+):(?P<n_short_s>\d+) (?P<n_short_t>\d+) (?P<n_short_a>\d+)")
 L = re.compile(record_pattern%"L (?P<epoch>\d+) (?P<t_ref_h>\d+) (?P<t_ref_ta>\d+)")
+K = re.compile(record_pattern%"K (?P<epoch>\d+) (?P<skew_error>-?\d+) (?P<flag>\d+)")
 alive = re.compile(record_pattern%"I am alive! EUI-64: (?P<eui>[\d:abcdef]+)")
 
 
@@ -75,6 +76,7 @@ def parse():
     Elog = open("energy.log",'w')
     Flog = open("energy_tf.log",'w')
     Llog = open("clock.log",'w')
+    Klog = open("skew.log",'w')
     Alog = open("app_send.log", 'w')
     nodelog = open("node.log",'w')
     Slog.write("epoch\tsrc\tn_tx\tn_acks\tsync_acks\tsync_missed\tskew\thops\ttime\n")
@@ -84,6 +86,7 @@ def parse():
     Elog.write("epoch\tnode\tontime\tton_s\tton_t\tton_a\ttime\n")
     Flog.write("epoch\tnode\ttf_s\ttf_t\ttf_a\tn_short_s\tn_short_t\tn_short_a\t\ttime\n")
     Llog.write("epoch\ttime\tsrc\tt_ref_h\tt_ref_ta\n")
+    Klog.write("epoch\ttime\tsrc\tskew_error\tflag\n")
     Alog.write("epoch\tsrc\tseqn\tacked\tlog_seqn\ttime\n")
     nodelog.write("id\teui64\ttime\n")
 
@@ -224,6 +227,17 @@ def parse():
                         t_ref_ta = int(g["t_ref_ta"])
 
                         Llog.write("%d\t%d\t%d\t%d\t%d\n"%(epoch,time,src,t_ref_h,t_ref_ta))
+                        continue
+                m = K.match(l)
+                if m:
+                        g = m.groupdict()
+                        epoch = int(g["epoch"])
+                        src = self_id if self_id is not None else int(g["self_id"])
+                        time = convert_time(g["time"])
+                        skew_error = int(g["skew_error"])
+                        flag = int(g["flag"])
+
+                        Klog.write("%d\t%d\t%d\t%d\t%d\n"%(epoch,time,src,skew_error,flag))
                         continue
                 m = alive.match(l) 
                 if m:
