@@ -208,6 +208,17 @@ static typeof(n_ta) log_t_ref_ta;    // TA phase when log_t_ref_h is acquired
               + (time_h_t)(_low_ref)    * 128lu \
               + (time_h_t)(_high_offset)  ) )
 
+// time_h interval from last epoch/n_ta (_le,_la) to current epoch/n_ta (_ce,_ca)
+#define TIME_INTERVAL_H(_ce, _ca, _le, _la) ( \
+  (time_h_t)(_ce - _le) * ( TIME_H_T(0,conf.period,0) ) \
+  + ( (_ca == NULL_N_TA) ? 0 : TIME_H_T(0,PHASE_A_OFFS(_ca),0) )\
+  - ( (_la == NULL_N_TA) ? 0 : TIME_H_T(0,PHASE_A_OFFS(_la),0) ))
+
+// RTimer difference between A offsets
+#define DIFF_A_OFFS(_ca, _la) ( \
+    (int32_t)( (_ca == NULL_N_TA) ? 0 : PHASE_A_OFFS(_ca) )\
+  - (int32_t)( (_la == NULL_N_TA) ? 0 : PHASE_A_OFFS(_la) ))
+
 // shortcut
 #define LOW_TO_TIME_H(_low_ref) ( TIME_H_T(0,_low_ref,0) )
 // from a time_h_t reference, get the low-resolution value (RTimer - 32kHz)
@@ -374,6 +385,30 @@ static inline int correct_ack_skew(rtimer_clock_t new_ref) {
 #else
   return 1;
 #endif
+}
+
+// skew error threshold, always >0
+#define SKEW_ERROR_THRESHOLD 20
+
+static inline int is_ref_correct(time_h_t new_ref) {
+  static time_h_t expected_t_ref_h;
+  static skew_t skew_error_h;
+  static float expected_skew_f;
+  // expected time reference
+  expected_t_ref_h = last_t_ref_h
+    + TIME_INTERVAL_H(epoch,n_ta,last_epoch,last_n_ta);
+  // float fraction of the expected skew accumulated since the last sync
+  expected_skew_f = (float)(epoch - last_epoch)
+    + (float)((float)(DIFF_A_OFFS(n_ta,last_n_ta)) / (float)(conf.period));
+  expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+  // get the skew we actually accumulated
+  if (new_ref >= expected_t_ref_h)
+       skew_error_h =   (skew_t)(new_ref - expected_t_ref_h) ;
+  else skew_error_h = -((skew_t)(expected_t_ref_h - new_ref));
+  // get the real skew error (the one we fail to predict)
+  skew_error_h -= (skew_t)expected_skew_f;
+  // return true if the reference is good
+  return (- SKEW_ERROR_THRESHOLD < skew_error_h) && (skew_error_h < SKEW_ERROR_THRESHOLD);
 }
 
 static inline void init_epoch_state() { // zero out epoch-related variables
@@ -742,12 +777,20 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
     time_h_t tmp_h = TIME_H_T(get_timer_overflow(), t_ref_corrected, glossy_get_T_offset_h());
     // check if the new ref is valid
     if (tmp_h > last_t_ref_h) {
-      // update the epoch reference time
-      t_ref_epoch_h = tmp_h;
-      // update last_* variables
-      last_t_ref_h = tmp_h;
-      last_epoch = epoch;
-      last_n_ta = NULL_N_TA;
+      // we "mask" n_ta value temporarely (should be NULL is S phase)
+      typeof(n_ta) old_n_ta = n_ta; n_ta = NULL_N_TA;
+      // check is reference is correct
+      int is_correct = is_ref_correct(tmp_h);
+      n_ta = old_n_ta; // reset to the old value
+      // update only if the reference is correct or we are out-of-sync
+      if ( is_correct || epoch > last_epoch + 2 || last_t_ref_h == 0 ) {
+        // update the epoch reference time
+        t_ref_epoch_h = tmp_h;
+        // update last_* variables
+        last_t_ref_h = tmp_h;
+        last_epoch = epoch;
+        last_n_ta = NULL_N_TA;
+      }
     }
     // log the reference time
     log_t_ref_h = tmp_h;
@@ -894,12 +937,17 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
           tmp_h = TIME_H_T(get_timer_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
           // check if ref is valid
           if (tmp_h > last_t_ref_h) {
-            // update the epoch reference time
-            t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
-            // update last_* variables
-            last_t_ref_h = tmp_h;
-            last_epoch = epoch;
-            last_n_ta = n_ta;
+            // check is reference is correct
+            int is_correct = is_ref_correct(tmp_h);
+            // update only if the reference is correct or we are out-of-sync
+            if ( is_correct || epoch > last_epoch + 2 || last_t_ref_h == 0 ) {
+              // update the epoch reference time
+              t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
+              // update last_* variables
+              last_t_ref_h = tmp_h;
+              last_epoch = epoch;
+              last_n_ta = n_ta;
+            }
           }
           // log only if we didn't sync previously during this epoch
           if (log_t_ref_h == 0) {
