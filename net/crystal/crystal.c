@@ -196,6 +196,12 @@ static typeof(n_ta) last_n_ta;       // number of TA phase of the last (glossy) 
 static time_h_t log_t_ref_h;         // epoch reference time for clock skew
 static typeof(n_ta) log_t_ref_ta;    // TA phase when log_t_ref_h is acquired
 
+// for skew logging
+#define LSI_MAX 5
+static uint8_t lsi;                     // log skew index
+static skew_t log_skew_error[LSI_MAX];  // array of skew error values
+static uint8_t log_flag[LSI_MAX];
+
 // "null" value for last_n_ta (assuming it will never reach its maximum value)
 #define NULL_N_TA ( (typeof(last_n_ta))( ~((typeof(last_n_ta))0) ) )
 // note: last_epoch use 0 as null value, since epochs start from 1
@@ -407,6 +413,14 @@ static inline int is_ref_correct(time_h_t new_ref) {
   else skew_error_h = -((skew_t)(expected_t_ref_h - new_ref));
   // get the real skew error (the one we fail to predict)
   skew_error_h -= (skew_t)expected_skew_f;
+  // log skew error
+  if (lsi < LSI_MAX) {
+    log_skew_error[lsi] = skew_error_h;
+    log_flag[lsi] = !(
+      (- SKEW_ERROR_THRESHOLD < skew_error_h) && (skew_error_h < SKEW_ERROR_THRESHOLD)
+    );
+    lsi++;
+  }
   // return true if the reference is good
   return (- SKEW_ERROR_THRESHOLD < skew_error_h) && (skew_error_h < SKEW_ERROR_THRESHOLD);
 }
@@ -430,6 +444,7 @@ static inline void init_epoch_state() { // zero out epoch-related variables
   synced_with_ack = 0;
 
   log_t_ref_h = 0;
+  lsi = 0;
 }
 
 // ------------------------------------------------------------- S thread (root) ---------------------------------------
@@ -1263,6 +1278,10 @@ void crystal_print_epoch_logs() {
     printf("P %u:%u %u %u:%u %u %u %d:%d\n", 
         epoch, recvsrc_S, recvtype_S, recvlen_S, n_badtype_A, n_badlen_A, n_badcrc_A, log_ack_skew_err, 0);
     printf("L %u %llu %u\n", epoch, log_t_ref_h, log_t_ref_ta);
+    static int i;
+    for (i=0; i < lsi; i++) {
+      printf("K %u %ld %u\n", epoch, log_skew_error[i], log_flag[i]);
+    }
   }
 
 #if CRYSTAL_LOGLEVEL == CRYSTAL_LOGS_ALL
