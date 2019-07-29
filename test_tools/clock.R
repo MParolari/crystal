@@ -9,8 +9,6 @@
 RTIMER_SECONDS <- 32768
 # DCO ticks every RTimer ticks
 CLOCK_PHI <- 128
-# Epoch duration in seconds
-EPOCH_DUR <- 1
 # System should be synced after this epoch (only epochs after this are plotted)
 FIRST_EPOCH <- 60
 # If true, outputs will be in microseconds
@@ -24,6 +22,13 @@ PLOT_FILENAME <- "clock.pdf"
 # try to load functions for extra stats
 EXTRA_STATS <- require(moments)
 
+# read params file
+params <- read.table(PARAMS_FILENAME, header=T)[c("period","sink")]
+# period (epoch duration) in seconds 
+period = params$period[1]
+# sink node id
+sink_id = params$sink[1]
+
 # read parsed log file
 message("Read input: ", LOG_FILENAME)
 fields <- c("epoch", "time", "src", "t_ref_h", "t_ref_ta")
@@ -35,14 +40,14 @@ if (MICROSECONDS_CONV) {
 	# from ticks to microseconds
 	data$t_ref_h <- data$t_ref_h / CLOCK_PHI / RTIMER_SECONDS * 10^6
 	# from seconds to microseconds
-	EPOCH_DUR <- EPOCH_DUR * 10^6
+	period <- period * 10^6
 	# binwidth for histograms
 	HIST_BINWIDTH <- 1 / CLOCK_PHI / RTIMER_SECONDS * 10^6
 	# time/skew unit for output label/log
 	TIME_UNIT <- "(micro-seconds)"
 } else {
 	# with output in number of number of ticks, convert from seconds to ticks
-	EPOCH_DUR <- EPOCH_DUR * CLOCK_PHI * RTIMER_SECONDS
+	period <- period * CLOCK_PHI * RTIMER_SECONDS
 	# default binwidth for histograms
 	HIST_BINWIDTH <- 1
 	# default time/skew unit for output label/log
@@ -100,7 +105,7 @@ for (node in stats$src) {
 	# compute the skew as the difference between timestamps over
 	# the difference between epochs ("local clock" / "real global clock")
 	# minus the epoch duration
-	x$skew <- x$tdiff / x$ediff - EPOCH_DUR
+	x$skew <- x$tdiff / x$ediff - period
 	# get only "realiable" epochs
 	y <- x[x$epoch>=FIRST_EPOCH,]
 	# compute and save stats
@@ -126,8 +131,6 @@ writeLines(paste("#", capture.output(print(stats))))
 
 # if the unit is still in VHT-ticks, output data for later analysis
 if (!MICROSECONDS_CONV) {
-	# read the sink id from parameters
-	sink_id = read.table(PARAMS_FILENAME, header=T)$sink[1]
 	# add a column with the sink id reference
 	stats$sink <- sink_id
 	# write sink, nodes and estimated skew mean
