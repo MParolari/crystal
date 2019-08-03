@@ -43,7 +43,6 @@
 #include "cc2538-rf.h"
 #include "dev/leds.h"
 //#include "node-id.h"
-#include "unimplemented.h"
 #endif
 
 #if CRYSTAL_2420
@@ -443,6 +442,10 @@ static inline void init_epoch_state() { // zero out epoch-related variables
   sleep_order = 0;
   synced_with_ack = 0;
 
+  recvlen_S = 0;
+  recvtype_S = 0;
+  recvsrc_S = 0;
+  
   log_t_ref_h = 0;
   lsi = 0;
 }
@@ -759,21 +762,25 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
 
   UPDATE_SLOT_STATS(S, 0);
 
-  recvlen_S = glossy_get_payload_len();
-  recvtype_S = recv_pkt_type;
-  recvsrc_S = buf.sync_hdr.src;
   rx_count_S = glossy_get_n_rx();
   tx_count_S = glossy_get_n_tx();
 
-  correct_packet = (recvtype_S == CRYSTAL_TYPE_SYNC 
+  correct_packet = 0;
+
+  if (rx_count_S > 0) {
+    recvlen_S = glossy_get_payload_len();
+    recvtype_S = recv_pkt_type;
+    recvsrc_S = buf.sync_hdr.src;
+    correct_packet = (recvtype_S == CRYSTAL_TYPE_SYNC 
       /*&& recvsrc_S  == conf.sink_id */
       && recvlen_S  == CRYSTAL_S_TOTAL_LEN);
-
-  if (rx_count_S > 0 && correct_packet) {
-    epoch = buf.sync_hdr.epoch;
-    hopcount = glossy_get_relay_cnt_first_rx();
+    if (correct_packet) {
+      epoch = buf.sync_hdr.epoch;
+      crystal_info.epoch = epoch;
+      hopcount = glossy_get_relay_cnt_first_rx();
+    }
   }
-  if (IS_SYNCED() && rx_count_S > 0
+  if (IS_SYNCED()
       && correct_packet
       && correct_hops()) {
     t_ref_corrected_s = glossy_get_t_ref();
