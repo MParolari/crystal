@@ -17,6 +17,7 @@ input_files = args.input
 record_format = args.format
 
 record_pattern = {
+        "local":"^(?P<time>\d+) (?P<self_id>\d+)\|%s$",
         "graz":"^(?P<date>[\d-]+) (?P<time>[\d:.-]+)\|%s$", # Graz
         "cooja":"^(?P<time>[\d:.]+)	ID:(?P<self_id>\d+)	%s$", # Cooja
         #"cooja":"^(?P<time>\d+):(?P<self_id>\d+):%s", # Cooja without GUI
@@ -52,7 +53,7 @@ def convert_time(time):
     elif record_format == "unitn":
         return 0 # TODO
     else:
-        return time
+        return int(time)
 
 S = re.compile(record_pattern%"S (?P<epoch>\d+):(?P<n_tx>\d+) (?P<n_acks>\d+) (?P<sync_acks>\d+):(?P<sync_missed>\d+) (?P<skew>-?\d+) (?P<hops>\d+)")
 A = re.compile(record_pattern%"A (?P<epoch>\d+):(?P<seqn>\d+) (?P<acked>\d+) (?P<log_seqn>\d+)")
