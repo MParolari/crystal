@@ -407,6 +407,13 @@ char start_tx_handler(struct rtimer *t, void *ptr) {
 
   //leds_off(LEDS_RED);
   // start the first transmission
+  
+  if (!sync) { // only T phases
+  // raise P6.6 pin
+  P6DIR |= 1<<6;
+  P6OUT |= 1<<6;
+  }
+
   t_start = RTIMER_NOW_DCO();
   radio_start_tx();
   // schedule the initiator timeout
@@ -557,6 +564,9 @@ uint8_t glossy_stop(void) {
   glossy_stop_initiator_timeout();
   // turn off the radio
   radio_off();
+
+  // lower P6.6 pin
+  P6OUT &= ~(1<<6);
 
   // flush radio buffers
   radio_flush_rx();
