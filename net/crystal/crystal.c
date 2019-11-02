@@ -209,6 +209,11 @@ static typeof(n_ta) last_n_ta;       // number of TA phase of the last (glossy) 
   + ( (_ca == NULL_N_TA) ? 0 : TIME_H_T(0,PHASE_A_OFFS(_ca),0) )\
   - ( (_la == NULL_N_TA) ? 0 : TIME_H_T(0,PHASE_A_OFFS(_la),0) ))
 
+// RTimer difference between T offset and A offset
+#define DIFF_T_OFFS(_ca, _la) ( \
+    (int32_t)( PHASE_T_OFFS(_ca) )\
+  - (int32_t)( (_la == NULL_N_TA) ? 0 : PHASE_A_OFFS(_la) ))
+
 // RTimer difference between A offsets
 #define DIFF_A_OFFS(_ca, _la) ( \
     (int32_t)( (_ca == NULL_N_TA) ? 0 : PHASE_A_OFFS(_ca) )\
@@ -820,6 +825,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     static uint16_t have_packet;
     static int i_tx;
     static time_h_t tmp_h;
+    static float expected_skew_f;
 
     init_ta_log_vars();
     crystal_info.n_ta = n_ta;
@@ -843,6 +849,13 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     }
     tmp_h = t_ref_epoch_h + LOW_TO_TIME_H(PHASE_T_OFFS(n_ta))
       - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(guard);
+    // float fraction of the expected skew we accumulated
+    expected_skew_f = 
+      (float)((float)(DIFF_T_OFFS(n_ta,(last_epoch < epoch ? NULL_N_TA : last_n_ta)))
+      / (float)(conf.period));
+    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
+    else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
     t_slot_start = GET_LOW_REF(tmp_h);
     t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_slot_stop = t_slot_start + conf.w_T + guard;
@@ -893,6 +906,13 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     guard = (sync_missed && !synced_with_ack)?CRYSTAL_SHORT_GUARD_NOSYNC:CRYSTAL_SHORT_GUARD;
     tmp_h = t_ref_epoch_h + LOW_TO_TIME_H(PHASE_A_OFFS(n_ta))
       - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(guard);
+    // float fraction of the expected skew we accumulated
+    expected_skew_f = 
+      (float)((float)(DIFF_A_OFFS(n_ta,(last_epoch < epoch ? NULL_N_TA : last_n_ta)))
+      / (float)(conf.period));
+    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
+    else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
     t_slot_start = GET_LOW_REF(tmp_h);
     t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_slot_stop = t_slot_start + conf.w_A + guard;
