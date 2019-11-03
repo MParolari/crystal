@@ -903,7 +903,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
         i_tx ? node_id : GLOSSY_UNKNOWN_INITIATOR, 
         CRYSTAL_T_TOTAL_LEN, 
         CRYSTAL_TYPE_DATA, 
-        conf.ntx_T,
+        i_tx ? conf.ntx_T : 0, // don't retransmit if you don't have packets
         channel,
         GLOSSY_WITHOUT_SYNC,
         0, // don't stop on sync
