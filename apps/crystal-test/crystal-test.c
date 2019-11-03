@@ -95,7 +95,7 @@ void app_post_S(int received, uint8_t* payload) {
         app_new_packet();
         #if (JITTER != 0)
           #if (JITTER_NODE != 0)
-          if (i == JITTER_NODE) app_have_delay = 1;
+          if (node_id == JITTER_NODE) app_have_delay = 1;
           #else
           if (i == ((crystal_info.epoch - START_EPOCH) % NUM_ACTIVE_EPOCHS) % CONCURRENT_TXS )
             app_have_delay = 1;
