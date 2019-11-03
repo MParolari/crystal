@@ -245,7 +245,9 @@ static uint8_t log_flag[LSI_MAX];
 
 #define CRYSTAL_MAX_ACTIVE_TIME (conf.period - \
     CRYSTAL_TIME_FOR_APP - CRYSTAL_APP_PRE_EPOCH_CB_TIME - CRYSTAL_INIT_GUARD - CRYSTAL_INTER_PHASE_GAP - 100)
-#define CRYSTAL_MAX_TAS (((unsigned int)(CRYSTAL_MAX_ACTIVE_TIME - TAS_START_OFFS))/(TA_DURATION))
+//#define CRYSTAL_MAX_TAS (((unsigned int)(CRYSTAL_MAX_ACTIVE_TIME - TAS_START_OFFS))/(TA_DURATION))
+#define CRYSTAL_MAX_TAS 1
+extern uint16_t app_have_delay;
 
 
 
@@ -880,6 +882,13 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
     if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
     else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
+    if (app_have_delay) {
+      #if (JITTER > 0)
+      tmp_h = tmp_h + (time_h_t)JITTER;
+      #elif (JITTER < 0)
+      tmp_h = tmp_h - (time_h_t)(-JITTER);
+      #endif
+    }
     t_slot_start = GET_LOW_REF(tmp_h);
     t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_slot_stop = t_slot_start + conf.w_T + guard;
