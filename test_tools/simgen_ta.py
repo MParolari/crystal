@@ -86,7 +86,7 @@ def prepare_binary(simdir, binary_name, nodes, num_epochs, concurrent_txs, new_e
 
 
 
-def mk_env(power, channel, sink, num_senders, n_empty, cca):
+def mk_env(power, channel, sink, num_senders, n_empty, cca, jitter):
     cflags = [
     "-DTX_POWER=%d"%power,
     "-DCRYSTAL_CONF_DEF_CHANNEL=%d"%channel,
@@ -113,6 +113,8 @@ def mk_env(power, channel, sink, num_senders, n_empty, cca):
     "-DCRYSTAL_CONF_CHHOP_MAPPING=CHMAP_%s"%chmap,
     "-DCRYSTAL_CONF_BSTRAP_CHHOPPING=BSTRAP_%s"%boot_chop,
     "-DCRYSTAL_CONF_N_FULL_EPOCHS=%d"%full_epochs,
+    "-DJITTER=%d"%(1 + int(jitter * 32768 * 128 / 1000000) if jitter else jitter),
+    "-DJITTER_NODE=%d"%jitter_node,
     ]
 
     if logging:
@@ -170,6 +172,8 @@ defaults = {
     #"boot_chop":"nohop",
     "logging":True,
     "seed":None,
+    "jitters":[0.],
+    "jitter_node":0,
     }
 
 set_defaults(pars, defaults)
@@ -193,10 +197,10 @@ with open("nodelist.txt") as f:
 binary_name = "crystal-test.sky" if testbed != "unitn" else "crystal-test.bin" 
 
 simnum = 0
-for (power, channel, sink, num_senders, n_empty, cca, nodemap) in itertools.product(powers, channels, sinks, num_senderss, n_emptys, ccas, nodemaps):
+for (power, channel, sink, num_senders, n_empty, cca, nodemap, jitter) in itertools.product(powers, channels, sinks, num_senderss, n_emptys, ccas, nodemaps, jitters):
     n_empty = NemptyTuple(*n_empty)
     cca = CcaTuple(*cca)
-    simdir = "sink%03d_snd%02d_p%02d_c%02d_e%.2f_ns%02d_nt%02d_na%02d_ds%02d_dt%02d_da%02d_syna%d_pl%03d_r%02dy%02dz%02dx%02d_dyn%d_cca%d_%d_fe%02d_%s_%s_%s_B%s"%(sink, num_senders, power, channel, period, n_tx_s, n_tx_t, n_tx_a, dur_s, dur_t, dur_a, sync_ack, payload, n_empty.r, n_empty.y, n_empty.z, n_empty.x, dyn_nempty, cca.dbm, cca.counter, full_epochs, testbed, nodemap, chmap, boot_chop)
+    simdir = "sink%03d_j%04d_snd%02d_p%02d_c%02d_e%.2f_ns%02d_nt%02d_na%02d_ds%02d_dt%02d_da%02d_syna%d_pl%03d_r%02dy%02dz%02dx%02d_dyn%d_cca%d_%d_fe%02d_%s_%s_%s_B%s"%(sink, jitter, num_senders, power, channel, period, n_tx_s, n_tx_t, n_tx_a, dur_s, dur_t, dur_a, sync_ack, payload, n_empty.r, n_empty.y, n_empty.z, n_empty.x, dyn_nempty, cca.dbm, cca.counter, full_epochs, testbed, nodemap, chmap, boot_chop)
     if os.path.isdir(simdir):
         continue
     try:
@@ -219,7 +223,7 @@ for (power, channel, sink, num_senders, n_empty, cca, nodemap) in itertools.prod
         if (num_senders > len(all_senders)):
             raise Exception("More senders than nodes: %d > %d, skipping test"%(num_senders, len(all_senders)))
 
-        new_env = mk_env(power, channel, sink, num_senders, n_empty, cca)
+        new_env = mk_env(power, channel, sink, num_senders, n_empty, cca, jitter)
         prepare_binary(simdir, binary_name, all_senders, active_epochs, num_senders, new_env)
         if nodemap != "all":
             copy(nodemap_txt, os.path.join(simdir, "nodemap.txt"))
@@ -256,6 +260,8 @@ for (power, channel, sink, num_senders, n_empty, cca, nodemap) in itertools.prod
             p["chmap"] = chmap
             p["boot_chop"] = boot_chop
             p["full_epochs"] = full_epochs
+            p["jitter"] = jitter
+            p["jitter_node"] = jitter_node
             header = " ".join(p.keys())
             values = " ".join([str(x) for x in p.values()])
             f.write(header)
