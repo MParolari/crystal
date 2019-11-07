@@ -9,7 +9,7 @@
 
 CFLAGS+=" -DSINK_ID=1" # the sink node id
 CFLAGS+=" -DTX_POWER=31 -DCRYSTAL_CONF_DEF_CHANNEL=26 -DCONCURRENT_TXS=2 -DNUM_ACTIVE_EPOCHS=1"
-CFLAGS+=" -DPAYLOAD_LENGTH=2"
+CFLAGS+=" -DPAYLOAD_LENGTH=20"
 CFLAGS+=" -DCRYSTAL_CONF_LOGLEVEL=CRYSTAL_LOGS_ALL"
 #CFLAGS+=" -DCRYSTAL_CONF_LOGLEVEL=CRYSTAL_LOGS_EPOCH_STATS"
 
@@ -28,9 +28,18 @@ fi
 NODE_ID=$1
 CFLAGS+=" -DNODE_ID=$NODE_ID"
 
+# default values (no jitter)
+JITTER=0
+JITTER_NODE=0
+# 120 us ~=  504 DCOticks
+# 160 us ~=  672 DCOticks
 # 220 us ~=  923 DCOticks
 # 260 us ~= 1091 DCOticks
-#CFLAGS+=" -DCONST_JITTER=1091"
+JITTER=923
+JITTER_NODE=2
+
+CFLAGS+=" -DJITTER=$JITTER"
+CFLAGS+=" -DJITTER_NODE=$JITTER_NODE"
 
 
 export CFLAGS
@@ -42,8 +51,8 @@ rm -f crystal-test.sky crystal-test.ihex
 make crystal-test.ihex && mv crystal-test.sky crystal-test-$NODE_ID.sky && mv crystal-test.ihex crystal-test-$NODE_ID.ihex 
 rm -f sndtbl.c symbols.h symbols.c
 
-echo "testbed active_epochs start_epoch period senders sink n_tx_s n_tx_t n_empty payload" > params_tbl.txt
-echo "local   1             1           1      2       1    3      1      2       2" >> params_tbl.txt
+echo "testbed active_epochs start_epoch period senders sink n_tx_s n_tx_t n_empty payload jitter    jitter_node" > params_tbl.txt
+echo "local   1             1           1      2       1    3      1      2       2       $JITTER   $JITTER_NODE" >> params_tbl.txt
 
 
 DEV=/dev/ttyUSB0
