@@ -43,7 +43,6 @@
 #include "cc2538-rf.h"
 #include "dev/leds.h"
 //#include "node-id.h"
-#include "unimplemented.h"
 #endif
 
 #if CRYSTAL_2420
@@ -219,6 +218,11 @@ static uint8_t log_flag[LSI_MAX];
   (time_h_t)(_ce - _le) * ( TIME_H_T(0,conf.period,0) ) \
   + ( (_ca == NULL_N_TA) ? 0 : TIME_H_T(0,PHASE_A_OFFS(_ca),0) )\
   - ( (_la == NULL_N_TA) ? 0 : TIME_H_T(0,PHASE_A_OFFS(_la),0) ))
+
+// RTimer difference between T offset and A offset
+#define DIFF_T_OFFS(_ca, _la) ( \
+    (int32_t)( PHASE_T_OFFS(_ca) )\
+  - (int32_t)( (_la == NULL_N_TA) ? 0 : PHASE_A_OFFS(_la) ))
 
 // RTimer difference between A offsets
 #define DIFF_A_OFFS(_ca, _la) ( \
@@ -442,6 +446,10 @@ static inline void init_epoch_state() { // zero out epoch-related variables
   n_all_acks = 0;
   sleep_order = 0;
   synced_with_ack = 0;
+
+  recvlen_S = 0;
+  recvtype_S = 0;
+  recvsrc_S = 0;
 
   log_t_ref_h = 0;
   lsi = 0;
@@ -759,21 +767,25 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
 
   UPDATE_SLOT_STATS(S, 0);
 
-  recvlen_S = glossy_get_payload_len();
-  recvtype_S = recv_pkt_type;
-  recvsrc_S = buf.sync_hdr.src;
   rx_count_S = glossy_get_n_rx();
   tx_count_S = glossy_get_n_tx();
 
-  correct_packet = (recvtype_S == CRYSTAL_TYPE_SYNC 
+  correct_packet = 0;
+
+  if (rx_count_S > 0) {
+    recvlen_S = glossy_get_payload_len();
+    recvtype_S = recv_pkt_type;
+    recvsrc_S = buf.sync_hdr.src;
+    correct_packet = (recvtype_S == CRYSTAL_TYPE_SYNC 
       /*&& recvsrc_S  == conf.sink_id */
       && recvlen_S  == CRYSTAL_S_TOTAL_LEN);
-
-  if (rx_count_S > 0 && correct_packet) {
-    epoch = buf.sync_hdr.epoch;
-    hopcount = glossy_get_relay_cnt_first_rx();
+    if (correct_packet) {
+      epoch = buf.sync_hdr.epoch;
+      crystal_info.epoch = epoch;
+      hopcount = glossy_get_relay_cnt_first_rx();
+    }
   }
-  if (IS_SYNCED() && rx_count_S > 0
+  if (IS_SYNCED()
       && correct_packet
       && correct_hops()) {
     t_ref_corrected_s = glossy_get_t_ref();
@@ -837,6 +849,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     static uint16_t have_packet;
     static int i_tx;
     static time_h_t tmp_h;
+    static float expected_skew_f;
 
     init_ta_log_vars();
     crystal_info.n_ta = n_ta;
@@ -860,6 +873,13 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     }
     tmp_h = t_ref_epoch_h + LOW_TO_TIME_H(PHASE_T_OFFS(n_ta))
       - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(guard);
+    // float fraction of the expected skew we accumulated
+    expected_skew_f = 
+      (float)((float)(DIFF_T_OFFS(n_ta,(last_epoch < epoch ? NULL_N_TA : last_n_ta)))
+      / (float)(conf.period));
+    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
+    else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
     t_slot_start = GET_LOW_REF(tmp_h);
     t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_slot_stop = t_slot_start + conf.w_T + guard;
@@ -910,6 +930,13 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     guard = (sync_missed && !synced_with_ack)?CRYSTAL_SHORT_GUARD_NOSYNC:CRYSTAL_SHORT_GUARD;
     tmp_h = t_ref_epoch_h + LOW_TO_TIME_H(PHASE_A_OFFS(n_ta))
       - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(guard);
+    // float fraction of the expected skew we accumulated
+    expected_skew_f = 
+      (float)((float)(DIFF_A_OFFS(n_ta,(last_epoch < epoch ? NULL_N_TA : last_n_ta)))
+      / (float)(conf.period));
+    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
+    else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
     t_slot_start = GET_LOW_REF(tmp_h);
     t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_slot_stop = t_slot_start + conf.w_A + guard;

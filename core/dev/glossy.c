@@ -390,42 +390,20 @@ static inline void glossy_enable_other_interrupts(void) {
 
 
 char start_tx_handler(struct rtimer *t, void *ptr) {
-  rtimer_clock_t t_cap;
-  rtimer_clock_t t_init_h;
-  rtimer_clock_t t_timeout_h;
-  uint8_t of;
-  
-  // enable capture mode for both timers B6 and A2
-  TBCCTL6 = CCIS0 | CM_POS | CAP | SCS;
-  TACCTL2 = CCIS0 | CM_POS | CAP | SCS;
+  static volatile rtimer_clock_t jump;
 
-  // RTimer busy loop (wait until A2 timer capture the tick before timeout)
-  do {
-    TACCTL2 &= ~CCIFG; // clear flag
-    while (!(TACCTL2 & CCIFG)); // wait for capture
-    t_cap = TACCR2; // save the capture value
-  } while (t_start_l - 1 != t_cap);
+  // calculate the jump offset for later
+  // since (0 <= t_start_offset_h < 128), (jump > 0) always
+  jump = (128 - t_start_offset_h) << 1;
 
-  // clear flags
-  TACCTL2 &= ~CCIFG;
-  TBCCTL6 &= ~CCIFG;
-  // wait until both timers capture the next clock tick
-  while (!((TBCCTL6 & CCIFG) && (TACCTL2 & CCIFG)));
-  // Store the captured timer value
-  t_init_h = TBCCR6;
+  // RTimer busy loop
+  while (RTIMER_NOW() != t_start_l);
 
-  // DCO busy loop
-  t_timeout_h = t_init_h + t_start_offset_h;
-  of = RTIMER_CLOCK_LT(t_timeout_h, t_init_h); // if timeout overflowed
-  do {
-    TBCCTL6 &= ~CCIFG;
-    while(!(TBCCTL6 & CCIFG));
-    t_cap = TBCCR6;
-  } while ( RTIMER_CLOCK_LT(t_cap, t_timeout_h) || (of && RTIMER_CLOCK_LT(t_init_h, t_cap) ));
-
-  // disable capture mode for B6 and A2
-  TBCCTL6 = 0;
-  TACCTL2 = 0;
+  // DCO offset delay
+  asm volatile("add %[d], r0" : : [d] "m" (jump)); // jump above the nops
+  #define dcode(_code) _code;_code
+  dcode(dcode(dcode(dcode(dcode(dcode(dcode(asm volatile("nop")))))))); //128nop
+  #undef dcode
 
   //leds_off(LEDS_RED);
   // start the first transmission
