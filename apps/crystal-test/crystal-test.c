@@ -23,6 +23,7 @@ static crystal_config_t conf;
 PROCESS(crystal_test, "Crystal test");
 
 static uint16_t app_have_packet;
+uint16_t app_have_delay;
 static uint16_t app_seqn;
 static uint16_t app_log_seqn;
 
@@ -57,6 +58,7 @@ struct in_pkt_record {
 // Pre-S phase Crystal callback
 uint8_t* app_pre_S() {
   app_have_packet = 0;
+  app_have_delay = 0;
   //log_send_seqn = 0;
   n_pkt_sent = 0;
   n_pkt_recv = 0;
@@ -91,6 +93,14 @@ void app_post_S(int received, uint8_t* payload) {
       if (node_id == sndtbl[cur_idx + i]) {
         app_have_packet = 1;
         app_new_packet();
+        #if (JITTER != 0)
+          #if (JITTER_NODE != 0)
+          if (node_id == JITTER_NODE) app_have_delay = 1;
+          #else
+          if (i == ((crystal_info.epoch - START_EPOCH) % NUM_ACTIVE_EPOCHS) % CONCURRENT_TXS )
+            app_have_delay = 1;
+          #endif
+        #endif
         break;
       }
     }
