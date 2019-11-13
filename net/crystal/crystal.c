@@ -237,7 +237,8 @@ static uint8_t log_flag[LSI_MAX];
 #define GET_HIGH_OFFSET(_ref_h) ((rtimer_clock_t)((_ref_h) % 128lu))
 
 // get the skew (shortcut)
-#define GET_SKEW() ( period_skew * 128 )
+#include "static_skew_table.h"
+#define GET_SKEW() ( static_skew_table[node_id-1] / 2.f )
 
 // it's important to wait the maximum possible S phase duration before starting the TAs!
 #define PHASE_S_END_OFFS (CRYSTAL_INIT_GUARD*2 + conf.w_S + CRYSTAL_INTER_PHASE_GAP)
@@ -377,7 +378,7 @@ static inline int correct_hops() {
 #endif
 }
 
-#define CRYSTAL_ACK_SKEW_ERROR_DETECTION 1 
+#define CRYSTAL_ACK_SKEW_ERROR_DETECTION 0 
 static inline int correct_ack_skew(rtimer_clock_t new_ref) {
 #if (CRYSTAL_ACK_SKEW_ERROR_DETECTION)
   static int new_skew;
@@ -403,7 +404,7 @@ static inline int correct_ack_skew(rtimer_clock_t new_ref) {
 }
 
 // skew error threshold, always >0
-#define SKEW_ERROR_THRESHOLD 20
+#define SKEW_ERROR_THRESHOLD 50
 
 static inline int is_ref_correct(time_h_t new_ref) {
   static time_h_t expected_t_ref_h;
