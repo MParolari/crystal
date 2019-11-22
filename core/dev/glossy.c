@@ -754,6 +754,8 @@ inline void glossy_begin_rx(void) {
   glossy_schedule_rx_timeout();
 }
 
+uint8_t glossy_relay_max = 0;
+
 inline void glossy_end_rx(void) {
   rtimer_clock_t t_rx_stop_tmp = TBCCR1;
   uint8_t recv_sync;
@@ -781,6 +783,10 @@ inline void glossy_end_rx(void) {
         radio_off();
         glossy_state = GLOSSY_STATE_OFF;
       } 
+      else if (glossy_relay_max && GLOSSY_RELAY_CNT_FIELD >= glossy_relay_max) {
+        radio_off();
+        glossy_state = GLOSSY_STATE_OFF;
+      }
       else {
         if (1|| sync) {
           // increment relay_cnt field
