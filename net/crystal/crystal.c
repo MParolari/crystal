@@ -251,6 +251,7 @@ static uint8_t log_flag[LSI_MAX];
 //#define CRYSTAL_MAX_TAS (((unsigned int)(CRYSTAL_MAX_ACTIVE_TIME - TAS_START_OFFS))/(TA_DURATION))
 #define CRYSTAL_MAX_TAS 1
 extern uint16_t app_have_delay;
+extern uint8_t glossy_relay_max;
 
 
 
@@ -892,6 +893,9 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
       tmp_h = tmp_h - (time_h_t)(-JITTER);
       #endif
     }
+    #if GLOSSY_RELAY_MAX
+    glossy_relay_max = GLOSSY_RELAY_MAX; // set for the next T phase
+    #endif
     t_slot_start = GET_LOW_REF(tmp_h);
     t_slot_start_offset = GET_HIGH_OFFSET(tmp_h);
     t_slot_stop = t_slot_start + conf.w_T + guard;
@@ -911,6 +915,9 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     GLOSSY_WAIT(&pt_ta_node);
 
     UPDATE_SLOT_STATS(T, i_tx);
+    #if GLOSSY_RELAY_MAX
+    glossy_relay_max = 0; // reset value, i.e. disable it
+    #endif
 
     rx_count_T = glossy_get_n_rx();
     if (!i_tx) {
