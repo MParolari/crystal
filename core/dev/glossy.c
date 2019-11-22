@@ -508,9 +508,9 @@ void glossy_start(struct glossy *glossy_,
 
   // set Glossy packet length, with or without relay counter depending on the sync flag value
   if (data_len) {
-    packet_len_tmp = (sync) ?
-        data_len + FOOTER_LEN + GLOSSY_RELAY_CNT_LEN + GLOSSY_HEADER_LEN :
-        data_len + FOOTER_LEN + GLOSSY_HEADER_LEN;
+    packet_len_tmp = //(sync) ?
+        data_len + FOOTER_LEN + GLOSSY_RELAY_CNT_LEN + GLOSSY_HEADER_LEN ;//:
+        //data_len + FOOTER_LEN + GLOSSY_HEADER_LEN;
     packet_len = packet_len_tmp;
     // set the packet length field to the appropriate value
     GLOSSY_LEN_FIELD = packet_len_tmp;
@@ -535,7 +535,7 @@ void glossy_start(struct glossy *glossy_,
     // receiver: set Glossy state
     glossy_state = GLOSSY_STATE_WAITING;
   }
-  if (sync) {
+  if (1|| sync) {
     // set the relay_cnt field to 0
     GLOSSY_RELAY_CNT_FIELD = 0;
     // the reference time has not been updated yet
@@ -782,7 +782,7 @@ inline void glossy_end_rx(void) {
         glossy_state = GLOSSY_STATE_OFF;
       } 
       else {
-        if (sync) {
+        if (1|| sync) {
           // increment relay_cnt field
           GLOSSY_RELAY_CNT_FIELD++;
         }
@@ -795,7 +795,7 @@ inline void glossy_end_rx(void) {
       // first successful reception:
       // store current time and received relay counter
       t_first_rx_l = RTIMER_NOW();
-      if (sync && recv_sync) {
+      if (1|| sync && recv_sync) {
         relay_cnt = GLOSSY_RELAY_CNT_FIELD - 1;
       }
       if (!initiator) {
@@ -813,9 +813,9 @@ inline void glossy_end_rx(void) {
     }
     if (!packet_len) {
       packet_len = packet_len_tmp;
-      data_len = (recv_sync) ?
-          packet_len_tmp - FOOTER_LEN - GLOSSY_RELAY_CNT_LEN - GLOSSY_HEADER_LEN :
-          packet_len_tmp - FOOTER_LEN - GLOSSY_HEADER_LEN;
+      data_len = //(recv_sync) ?
+          packet_len_tmp - FOOTER_LEN - GLOSSY_RELAY_CNT_LEN - GLOSSY_HEADER_LEN ;//:
+          //packet_len_tmp - FOOTER_LEN - GLOSSY_HEADER_LEN;
     }
     rx_bad_crc = 0;
   } else {
