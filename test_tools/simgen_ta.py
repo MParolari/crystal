@@ -62,7 +62,10 @@ def prepare_binary(simdir, binary_name, nodes, num_epochs, concurrent_txs, new_e
     abs_env_name = abs_bname + ".env"
 
     with open(abs_tbl_name, "w") as f:
-        f.write(generate_table_array(nodes, num_epochs, concurrent_txs))
+        if list_senders[0] == 0:
+            f.write(generate_table_array(nodes, num_epochs, concurrent_txs))
+        else:
+            f.write("static const uint8_t sndtbl[] = {%s};"%",".join([str(x) for x in list_senders]))
 
     pwd = os.getcwd()
     os.chdir(apppath)
@@ -115,6 +118,7 @@ def mk_env(power, channel, sink, num_senders, n_empty, cca, jitter):
     "-DCRYSTAL_CONF_N_FULL_EPOCHS=%d"%full_epochs,
     "-DJITTER=%d"%(1 + int(jitter * 32768 * 128 / 1000000) if jitter else jitter),
     "-DJITTER_NODE=%d"%jitter_node,
+    "-DGLOSSY_RELAY_MAX=%d"%glossy_relay_max,
     ]
 
     if logging:
@@ -174,6 +178,8 @@ defaults = {
     "seed":None,
     "jitters":[0.],
     "jitter_node":0,
+    "list_senders":[0],
+    "glossy_relay_max":0,
     }
 
 set_defaults(pars, defaults)
@@ -262,6 +268,8 @@ for (power, channel, sink, num_senders, n_empty, cca, nodemap, jitter) in iterto
             p["full_epochs"] = full_epochs
             p["jitter"] = jitter
             p["jitter_node"] = jitter_node
+            p["glossy_relay_max"] = glossy_relay_max
+            p["list_senders"] = ",".join([str(x) for x in list_senders])
             header = " ".join(p.keys())
             values = " ".join([str(x) for x in p.values()])
             f.write(header)
