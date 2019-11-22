@@ -527,6 +527,7 @@ PT_THREAD(ta_root_thread(struct rtimer *t, void* ptr))
       UPDATE_SLOT_STATS(T, 0);
 
       correct_packet = 0;
+      hopcount = (typeof(hopcount))(-1); // reset
       cca_busy_cnt = get_cca_busy_cnt();
       rx_count_T = glossy_get_n_rx();
       if (rx_count_T) { // received data
@@ -538,6 +539,7 @@ PT_THREAD(ta_root_thread(struct rtimer *t, void* ptr))
         log_recv_length = glossy_get_payload_len();
         correct_packet = (log_recv_length == CRYSTAL_T_TOTAL_LEN && log_recv_type == CRYSTAL_TYPE_DATA);
         log_ta_status = correct_packet?CRYSTAL_RECV_OK:CRYSTAL_BAD_DATA;
+        hopcount = glossy_get_relay_cnt_first_rx();
       }
       else if (is_corrupted()) {
         n_empty_ts = 0;
@@ -1329,6 +1331,7 @@ void crystal_print_epoch_logs() {
       printf("K %u %ld %u\n", epoch, log_skew_error[i], log_flag[i]);
     }
   }
+  else printf("H %u %u\n", epoch, hopcount);
 
 #if CRYSTAL_LOGLEVEL == CRYSTAL_LOGS_ALL
   static int i;
