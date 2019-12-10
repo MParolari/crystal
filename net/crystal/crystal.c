@@ -669,7 +669,7 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         n_ta = 0;
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref();
-          t_ref_epoch_h = TIME_H_T(get_timer_overflow(), t_ref_corrected, glossy_get_T_offset_h());
+          t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
           last_epoch = epoch;
           last_n_ta = NULL_N_TA;
           successful_scan = 1;
@@ -688,7 +688,7 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref() - PHASE_A_OFFS(n_ta);
-          t_ref_epoch_h = TIME_H_T(get_timer_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
+          t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
             - LOW_TO_TIME_H(PHASE_A_OFFS(n_ta));
           last_epoch = epoch;
           last_n_ta = n_ta;
@@ -780,7 +780,7 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
     sync_missed = 0;
 
     // get the corrected reference time in high-resolution
-    time_h_t tmp_h = TIME_H_T(get_timer_overflow(), t_ref_corrected, glossy_get_T_offset_h());
+    time_h_t tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
     // check if the new ref is valid
     if (tmp_h > last_t_ref_h) {
       // we "mask" n_ta value temporarely (should be NULL is S phase)
@@ -952,7 +952,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
            ) {
 
           t_ref_corrected = N_TA_TO_REF(glossy_get_t_ref(), buf.ack_hdr.n_ta);
-          tmp_h = TIME_H_T(get_timer_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
+          tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
           // check if ref is valid
           if (tmp_h > last_t_ref_h) {
             // check is reference is correct
