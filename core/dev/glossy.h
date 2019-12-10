@@ -246,6 +246,12 @@ uint8_t glossy_get_relay_cnt_first_rx(void);
 rtimer_clock_t get_T_slot_h(void);
 
 /**
+ * \brief            Get the overflow counter value of the reference time.
+ * \returns          Overflow counter value at the reference time.
+ */
+rtimer_clock_t glossy_get_t_ref_overflow(void);
+
+/**
  * \brief            Get low-frequency synchronization reference time.
  * \returns          Low-frequency reference time
  *                   (i.e., time at which the initiator started the flood).

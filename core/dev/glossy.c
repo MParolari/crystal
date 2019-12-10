@@ -53,7 +53,7 @@ static void *ptr;
 static unsigned short ie1, ie2, p1ie, p2ie, tbiv;
 static unsigned short glossy_seqn;
 
-static rtimer_clock_t T_slot_h, T_rx_h, T_w_rt_h, T_tx_h, T_w_tr_h, t_ref_l, T_offset_h, t_first_rx_l;
+static rtimer_clock_t T_slot_h, T_rx_h, T_w_rt_h, T_tx_h, T_w_tr_h, t_ref_overflow, t_ref_l, T_offset_h, t_first_rx_l;
 #if GLOSSY_SYNC_WINDOW
 static unsigned long T_slot_h_sum;
 static uint8_t win_cnt;
@@ -600,6 +600,10 @@ rtimer_clock_t get_t_first_rx_l(void) {
   return t_first_rx_l;
 }
 
+rtimer_clock_t glossy_get_t_ref_overflow(void) {
+  return t_ref_overflow;
+}
+
 rtimer_clock_t glossy_get_t_ref(void) {
   return t_ref_l;
 }
@@ -650,6 +654,7 @@ static inline void estimate_slot_length(rtimer_clock_t t_rx_stop_tmp) {
 }
 
 static inline void compute_sync_reference_time(void) {
+  int f1 = TACTL & TAIFG;
 #if COOJA
   rtimer_clock_t t_cap_l = RTIMER_NOW();
   rtimer_clock_t t_cap_h = RTIMER_NOW_DCO();
@@ -658,6 +663,7 @@ static inline void compute_sync_reference_time(void) {
   rtimer_clock_t t_cap_h, t_cap_l;
   CAPTURE_NEXT_CLOCK_TICK(t_cap_h, t_cap_l);
 #endif /* COOJA */
+  int f2 = TACTL & TAIFG;
   rtimer_clock_t T_rx_to_cap_h = t_cap_h - t_rx_start;
   unsigned long T_ref_to_rx_h = (GLOSSY_RELAY_CNT_FIELD - 1) * ((unsigned long)T_slot_h + (packet_len * F_CPU) / 31250);
   unsigned long T_ref_to_cap_h = T_ref_to_rx_h + (unsigned long)T_rx_to_cap_h;
@@ -666,6 +672,12 @@ static inline void compute_sync_reference_time(void) {
   T_offset_h = (CLOCK_PHI - 1) - (T_ref_to_cap_h % CLOCK_PHI);
   // low-resolution value of the reference time
   t_ref_l = t_cap_l - T_ref_to_cap_l;
+  // low-resolution overflow counter
+  t_ref_overflow = get_timer_overflow();
+  if (t_cap_l < t_ref_l) t_ref_overflow--;
+  // fix the overflow counter if the interrupt is preempted
+  if (f1 || (!f1 && f2 && t_cap_l < (rtimer_clock_t)((rtimer_clock_t)(~((rtimer_clock_t)0))/2) ))
+    t_ref_overflow++;
   // the reference time has been updated
   t_ref_l_updated = 1;
 }
