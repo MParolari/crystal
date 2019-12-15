@@ -362,7 +362,7 @@ static inline int correct_hops() {
 #endif
 }
 
-#define CRYSTAL_ACK_SKEW_ERROR_DETECTION 1 
+#define CRYSTAL_ACK_SKEW_ERROR_DETECTION 0 
 static inline int correct_ack_skew(rtimer_clock_t new_ref) {
 #if (CRYSTAL_ACK_SKEW_ERROR_DETECTION)
   static int new_skew;
