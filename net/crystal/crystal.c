@@ -1139,17 +1139,15 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
     s_guard = (!skew_estimated || sync_missed >= N_MISSED_FOR_INIT_GUARD)?CRYSTAL_INIT_GUARD:CRYSTAL_LONG_GUARD;
 
     // Schedule the next epoch times
-    skew_t period_skew_h = (skew_t)(LOW_TO_TIME_H(period_skew));
+    t_ref_epoch_h = t_ref_epoch_h + LOW_TO_TIME_H(conf.period);
+    float expected_skew_f = 1.0f; // float fraction of the expected skew
     // if we synced during current epoch but not in S phase, take a partial skew
     if (last_epoch == epoch && last_n_ta != NULL_N_TA) {
-      period_skew_h = (float)(period_skew_h) * (float)(
-        1.0f - (float)((float)(PHASE_A_OFFS(last_n_ta)) / (float)(conf.period))
-      );
+      expected_skew_f -= (float)((float)(PHASE_A_OFFS(last_n_ta)) / (float)(conf.period));
     }
-    // (period + skew) is a skew_t sum, >=0, so after that a time_h_t sum is feasible
-    // and this requires ( |skew| < |epoch| )
-    t_ref_epoch_h = t_ref_epoch_h
-      + (time_h_t)((skew_t)LOW_TO_TIME_H(conf.period) + period_skew_h);
+    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    if      (expected_skew_f > 0) t_ref_epoch_h += (time_h_t)expected_skew_f;
+    else if (expected_skew_f < 0) t_ref_epoch_h -= (time_h_t)(-expected_skew_f);
     t_ref_estimated = t_ref_corrected_s + conf.period + period_skew;
     tmp_h = t_ref_epoch_h
       - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(s_guard);
