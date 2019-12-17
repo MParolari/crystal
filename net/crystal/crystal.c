@@ -190,6 +190,7 @@ static time_h_t t_ref_epoch_h;       // crystal epoch reference time
 static time_h_t last_t_ref_h;        // last (glossy! not crystal!) reference time acquired
 static typeof(epoch) last_epoch;     // epoch of the last (glossy) synchronization
 static typeof(n_ta) last_n_ta;       // number of TA phase of the last (glossy) synchronization
+static skew_t period_skew_h;         // current estimation of clock skew over a period of length CRYSTAL_PERIOD
 
 // "null" value for last_n_ta (assuming it will never reach its maximum value)
 #define NULL_N_TA ( (typeof(last_n_ta))( ~((typeof(last_n_ta))0) ) )
@@ -400,7 +401,7 @@ static inline int is_ref_correct(time_h_t new_ref) {
   // float fraction of the expected skew accumulated since the last sync
   expected_skew_f = (float)(epoch - last_epoch)
     + (float)((float)(DIFF_A_OFFS(n_ta,last_n_ta)) / (float)(conf.period));
-  expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+  expected_skew_f *= (float)period_skew_h;
   // get the skew we actually accumulated
   if (new_ref >= expected_t_ref_h)
        skew_error_h =   (skew_t)(new_ref - expected_t_ref_h) ;
@@ -853,7 +854,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     expected_skew_f = 
       (float)((float)(DIFF_T_OFFS(n_ta,(last_epoch < epoch ? NULL_N_TA : last_n_ta)))
       / (float)(conf.period));
-    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    expected_skew_f *= (float)period_skew_h;
     if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
     else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
     t_slot_start = GET_LOW_REF(tmp_h);
@@ -910,7 +911,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     expected_skew_f = 
       (float)((float)(DIFF_A_OFFS(n_ta,(last_epoch < epoch ? NULL_N_TA : last_n_ta)))
       / (float)(conf.period));
-    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    expected_skew_f *= (float)period_skew_h;
     if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
     else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
     t_slot_start = GET_LOW_REF(tmp_h);
@@ -1145,7 +1146,7 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
     if (last_epoch == epoch && last_n_ta != NULL_N_TA) {
       expected_skew_f -= (float)((float)(PHASE_A_OFFS(last_n_ta)) / (float)(conf.period));
     }
-    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    expected_skew_f *= (float)period_skew_h;
     if      (expected_skew_f > 0) t_ref_epoch_h += (time_h_t)expected_skew_f;
     else if (expected_skew_f < 0) t_ref_epoch_h -= (time_h_t)(-expected_skew_f);
     t_ref_estimated = t_ref_corrected_s + conf.period + period_skew;
@@ -1222,6 +1223,7 @@ bool crystal_start(crystal_config_t* conf_)
   n_noack_epochs = 0;
   sync_missed = 0;
   period_skew = 0;
+  period_skew_h = 0;
   last_t_ref_h = 0;
   last_epoch = 0;
   last_n_ta = NULL_N_TA;
