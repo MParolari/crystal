@@ -394,7 +394,8 @@ static inline int correct_ack_skew(rtimer_clock_t new_ref) {
 }
 
 // skew error threshold, always >0
-#define SKEW_ERROR_THRESHOLD 20
+#define SKEW_ERROR_THRESHOLD 64
+#define SKEW_ALPHA (0.1f)
 
 static inline int is_ref_correct(time_h_t new_ref) {
   static time_h_t expected_t_ref_h;
@@ -436,8 +437,11 @@ static inline void skew_update(time_h_t new_ref) {
   new_skew = (skew_t)(new_ref - last_t_ref_h) - (skew_t)time_interval_h;
   // update mean
   n_samples++;
-  d_skew_mean +=
-    ((float)new_skew / (float)time_interval_h - d_skew_mean) / (float)n_samples;
+  if (n_samples == 1)
+    d_skew_mean = ((float)new_skew / (float)time_interval_h);
+  else
+    d_skew_mean = SKEW_ALPHA * ((float)new_skew / (float)time_interval_h)
+      + (1.0f - SKEW_ALPHA) * d_skew_mean;
   period_skew_h = (float)(d_skew_mean * (float)LOW_TO_TIME_H(conf.period));
 }
 
