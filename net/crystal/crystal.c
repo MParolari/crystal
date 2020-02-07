@@ -192,6 +192,9 @@ static typeof(epoch) last_epoch;     // epoch of the last (glossy) synchronizati
 static typeof(n_ta) last_n_ta;       // number of TA phase of the last (glossy) synchronization
 static skew_t period_skew_h;         // current estimation of clock skew over a period of length CRYSTAL_PERIOD
 
+// when the node is considered out of sync
+#define IS_OUT_OF_SYNC() (epoch > last_epoch + 5)
+
 // "null" value for last_n_ta (assuming it will never reach its maximum value)
 #define NULL_N_TA ( (typeof(last_n_ta))( ~((typeof(last_n_ta))0) ) )
 // note: last_epoch use 0 as null value, since epochs start from 1
@@ -786,11 +789,11 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
     if (tmp_h > last_t_ref_h) {
       // we "mask" n_ta value temporarely (should be NULL is S phase)
       typeof(n_ta) old_n_ta = n_ta; n_ta = NULL_N_TA;
-      // check is reference is correct
+      // check if reference is correct
       int is_correct = is_ref_correct(tmp_h);
       n_ta = old_n_ta; // reset to the old value
       // update only if the reference is correct or we are out-of-sync
-      if ( is_correct || epoch > last_epoch + 2 || last_t_ref_h == 0 ) {
+      if ( is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
         // update the epoch reference time
         t_ref_epoch_h = tmp_h;
         // update last_* variables
@@ -956,10 +959,10 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
           tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
           // check if ref is valid
           if (tmp_h > last_t_ref_h) {
-            // check is reference is correct
+            // check if reference is correct
             int is_correct = is_ref_correct(tmp_h);
             // update only if the reference is correct or we are out-of-sync
-            if ( is_correct || epoch > last_epoch + 2 || last_t_ref_h == 0 ) {
+            if ( is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
               // update the epoch reference time
               t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
               // update last_* variables
