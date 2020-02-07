@@ -678,6 +678,7 @@ static char root_main_thread(struct rtimer *t, void *ptr) {
 PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
 {
   static uint32_t max_scan_duration, scan_duration;
+  static time_h_t tmp_h;
   PT_BEGIN(&pt_scan);
   channel = get_channel_node_bootstrap(SCAN_RX_NOTHING);
 
@@ -686,6 +687,9 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
 
   // Scanning loop
   while (1) {
+    // if the overflow flag is true, leave time for the interrupt 
+    if (TACTL & TAIFG) { WAIT_UNTIL(RTIMER_NOW() + RTIMER_SECOND/1000, &pt_scan); }
+
 #if CRYSTAL_2420
     bzero(&glossy_S, sizeof(glossy_S)); // reset the Glossy timing info
 #endif
@@ -721,7 +725,7 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref();
           t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
-          update_ref(last, 0, epoch, NULL_N_TA);
+          update_ref(last, t_ref_epoch_h, epoch, NULL_N_TA);
           successful_scan = 1;
           break; // exit the scanning
         }
@@ -738,9 +742,9 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref() - PHASE_A_OFFS(n_ta);
-          t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
-            - LOW_TO_TIME_H(PHASE_A_OFFS(n_ta));
-          update_ref(last, 0, epoch, n_ta);
+          tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
+          t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(n_ta));
+          update_ref(last, tmp_h, epoch, n_ta);
           successful_scan = 1;
           break; // exit the scanning
         }
