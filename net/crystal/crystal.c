@@ -190,6 +190,12 @@ static time_h_t t_ref_epoch_h;       // crystal epoch reference time
 static time_h_t last_t_ref_h;        // last (glossy! not crystal!) reference time acquired
 static typeof(epoch) last_epoch;     // epoch of the last (glossy) synchronization
 static typeof(n_ta) last_n_ta;       // number of TA phase of the last (glossy) synchronization
+static skew_t period_skew_h;         // current estimation of clock skew over a period of length CRYSTAL_PERIOD
+static float d_skew_mean;            // current skew average
+static uint32_t n_samples;           // number of sample collected for the skew mean
+
+// when the node is considered out of sync
+#define IS_OUT_OF_SYNC() (epoch > last_epoch + 5)
 
 // for clock logging and measurement
 static time_h_t log_t_ref_h;         // epoch reference time for clock skew
@@ -372,7 +378,7 @@ static inline int correct_hops() {
 #endif
 }
 
-#define CRYSTAL_ACK_SKEW_ERROR_DETECTION 1 
+#define CRYSTAL_ACK_SKEW_ERROR_DETECTION 0 
 static inline int correct_ack_skew(rtimer_clock_t new_ref) {
 #if (CRYSTAL_ACK_SKEW_ERROR_DETECTION)
   static int new_skew;
@@ -398,7 +404,8 @@ static inline int correct_ack_skew(rtimer_clock_t new_ref) {
 }
 
 // skew error threshold, always >0
-#define SKEW_ERROR_THRESHOLD 20
+#define SKEW_ERROR_THRESHOLD 64
+#define SKEW_ALPHA (0.1f)
 
 static inline int is_ref_correct(time_h_t new_ref) {
   static time_h_t expected_t_ref_h;
@@ -410,7 +417,7 @@ static inline int is_ref_correct(time_h_t new_ref) {
   // float fraction of the expected skew accumulated since the last sync
   expected_skew_f = (float)(epoch - last_epoch)
     + (float)((float)(DIFF_A_OFFS(n_ta,last_n_ta)) / (float)(conf.period));
-  expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+  expected_skew_f *= (float)period_skew_h;
   // get the skew we actually accumulated
   if (new_ref >= expected_t_ref_h)
        skew_error_h =   (skew_t)(new_ref - expected_t_ref_h) ;
@@ -427,6 +434,33 @@ static inline int is_ref_correct(time_h_t new_ref) {
   }
   // return true if the reference is good
   return (- SKEW_ERROR_THRESHOLD < skew_error_h) && (skew_error_h < SKEW_ERROR_THRESHOLD);
+}
+
+
+// if the skew estimation is currently reliable
+#define is_skew_reliable() (n_samples > 100)
+
+// reset skew estimation
+#define skew_reset() do{\
+  d_skew_mean = 0; n_samples = 0;\
+} while(0);
+
+// skew estimation method
+static inline void skew_update(time_h_t new_ref) {
+  static skew_t new_skew;
+  static time_h_t time_interval_h;
+  // time interval from the last synchronization
+  time_interval_h = TIME_INTERVAL_H(epoch,n_ta,last_epoch,last_n_ta);
+  // get the skew we actually accumulated
+  new_skew = (skew_t)(new_ref - last_t_ref_h) - (skew_t)time_interval_h;
+  // update mean
+  n_samples++;
+  if (n_samples == 1)
+    d_skew_mean = ((float)new_skew / (float)time_interval_h);
+  else
+    d_skew_mean = SKEW_ALPHA * ((float)new_skew / (float)time_interval_h)
+      + (1.0f - SKEW_ALPHA) * d_skew_mean;
+  period_skew_h = (float)(d_skew_mean * (float)LOW_TO_TIME_H(conf.period));
 }
 
 static inline void init_epoch_state() { // zero out epoch-related variables
@@ -690,7 +724,7 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         n_ta = 0;
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref();
-          t_ref_epoch_h = TIME_H_T(get_timer_overflow(), t_ref_corrected, glossy_get_T_offset_h());
+          t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
           last_epoch = epoch;
           last_n_ta = NULL_N_TA;
           successful_scan = 1;
@@ -709,7 +743,7 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref() - PHASE_A_OFFS(n_ta);
-          t_ref_epoch_h = TIME_H_T(get_timer_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
+          t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
             - LOW_TO_TIME_H(PHASE_A_OFFS(n_ta));
           last_epoch = epoch;
           last_n_ta = n_ta;
@@ -801,16 +835,18 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
     sync_missed = 0;
 
     // get the corrected reference time in high-resolution
-    time_h_t tmp_h = TIME_H_T(get_timer_overflow(), t_ref_corrected, glossy_get_T_offset_h());
+    time_h_t tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
     // check if the new ref is valid
     if (tmp_h > last_t_ref_h) {
       // we "mask" n_ta value temporarely (should be NULL is S phase)
       typeof(n_ta) old_n_ta = n_ta; n_ta = NULL_N_TA;
-      // check is reference is correct
-      int is_correct = is_ref_correct(tmp_h);
+      // check if reference is correct
+      int is_correct = 0;
+      if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
+      if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
       n_ta = old_n_ta; // reset to the old value
       // update only if the reference is correct or we are out-of-sync
-      if ( is_correct || epoch > last_epoch + 2 || last_t_ref_h == 0 ) {
+      if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
         // update the epoch reference time
         t_ref_epoch_h = tmp_h;
         // update last_* variables
@@ -877,7 +913,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     expected_skew_f = 
       (float)((float)(DIFF_T_OFFS(n_ta,(last_epoch < epoch ? NULL_N_TA : last_n_ta)))
       / (float)(conf.period));
-    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    expected_skew_f *= (float)period_skew_h;
     if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
     else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
     t_slot_start = GET_LOW_REF(tmp_h);
@@ -934,7 +970,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     expected_skew_f = 
       (float)((float)(DIFF_A_OFFS(n_ta,(last_epoch < epoch ? NULL_N_TA : last_n_ta)))
       / (float)(conf.period));
-    expected_skew_f *= (float)(period_skew * 128); // TODO use VHT skew
+    expected_skew_f *= (float)period_skew_h;
     if      (expected_skew_f > 0) tmp_h += (time_h_t)expected_skew_f;
     else if (expected_skew_f < 0) tmp_h -= (time_h_t)(-expected_skew_f);
     t_slot_start = GET_LOW_REF(tmp_h);
@@ -976,13 +1012,15 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
            ) {
 
           t_ref_corrected = N_TA_TO_REF(glossy_get_t_ref(), buf.ack_hdr.n_ta);
-          tmp_h = TIME_H_T(get_timer_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
+          tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
           // check if ref is valid
           if (tmp_h > last_t_ref_h) {
-            // check is reference is correct
-            int is_correct = is_ref_correct(tmp_h);
+            // check if reference is correct
+            int is_correct = 0;
+            if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
+            if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
             // update only if the reference is correct or we are out-of-sync
-            if ( is_correct || epoch > last_epoch + 2 || last_t_ref_h == 0 ) {
+            if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
               // update the epoch reference time
               t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
               // update last_* variables
@@ -1147,6 +1185,7 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
       epoch ++;
       crystal_info.epoch = epoch;
       starting_n_ta = 0;
+      if (IS_OUT_OF_SYNC()) skew_reset();
 
       app_pre_S();
 
@@ -1168,17 +1207,15 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
     s_guard = (!skew_estimated || sync_missed >= N_MISSED_FOR_INIT_GUARD)?CRYSTAL_INIT_GUARD:CRYSTAL_LONG_GUARD;
 
     // Schedule the next epoch times
-    skew_t period_skew_h = (skew_t)(LOW_TO_TIME_H(period_skew));
+    t_ref_epoch_h = t_ref_epoch_h + LOW_TO_TIME_H(conf.period);
+    float expected_skew_f = 1.0f; // float fraction of the expected skew
     // if we synced during current epoch but not in S phase, take a partial skew
     if (last_epoch == epoch && last_n_ta != NULL_N_TA) {
-      period_skew_h = (float)(period_skew_h) * (float)(
-        1.0f - (float)((float)(PHASE_A_OFFS(last_n_ta)) / (float)(conf.period))
-      );
+      expected_skew_f -= (float)((float)(PHASE_A_OFFS(last_n_ta)) / (float)(conf.period));
     }
-    // (period + skew) is a skew_t sum, >=0, so after that a time_h_t sum is feasible
-    // and this requires ( |skew| < |epoch| )
-    t_ref_epoch_h = t_ref_epoch_h
-      + (time_h_t)((skew_t)LOW_TO_TIME_H(conf.period) + period_skew_h);
+    expected_skew_f *= (float)period_skew_h;
+    if      (expected_skew_f > 0) t_ref_epoch_h += (time_h_t)expected_skew_f;
+    else if (expected_skew_f < 0) t_ref_epoch_h -= (time_h_t)(-expected_skew_f);
     t_ref_estimated = t_ref_corrected_s + conf.period + period_skew;
     tmp_h = t_ref_epoch_h
       - LOW_TO_TIME_H(CRYSTAL_REF_SHIFT) - LOW_TO_TIME_H(s_guard);
@@ -1253,9 +1290,11 @@ bool crystal_start(crystal_config_t* conf_)
   n_noack_epochs = 0;
   sync_missed = 0;
   period_skew = 0;
+  period_skew_h = 0;
   last_t_ref_h = 0;
   last_epoch = 0;
   last_n_ta = NULL_N_TA;
+  skew_reset();
 
   /* reset the protothread */
   //TBC: Is it needed?
