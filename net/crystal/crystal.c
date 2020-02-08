@@ -430,9 +430,9 @@ static inline int is_ref_correct(time_h_t new_ref) {
 #define is_skew_reliable() (n_samples > 100)
 
 // reset skew estimation
-#define skew_reset() do{\
-  d_skew_mean = 0; n_samples = 0;\
-} while(0);
+#define skew_reset() do{ \
+  d_skew_mean = 0; n_samples = 0; \
+} while(0)
 
 // skew estimation method
 static inline void skew_update(time_h_t new_ref) {
@@ -768,6 +768,8 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
 PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
 {
   static uint16_t ever_synced_with_s;   // Synchronized with an S at least once
+  static time_h_t tmp_h;
+  static int is_correct;
   PT_BEGIN(&pt_s_node);
   
   channel = get_channel_epoch(epoch);
@@ -819,13 +821,13 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
     sync_missed = 0;
 
     // get the corrected reference time in high-resolution
-    time_h_t tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
+    tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
     // check if the new ref is valid
     if (tmp_h > last_t_ref_h) {
       // we "mask" n_ta value temporarely (should be NULL is S phase)
       typeof(n_ta) old_n_ta = n_ta; n_ta = NULL_N_TA;
       // check if reference is correct
-      int is_correct = 0;
+      is_correct = 0;
       if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
       if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
       n_ta = old_n_ta; // reset to the old value
@@ -864,6 +866,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
     static uint16_t have_packet;
     static int i_tx;
     static time_h_t tmp_h;
+    static int is_correct;
     static float expected_skew_f;
 
     init_ta_log_vars();
@@ -995,7 +998,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
           // check if ref is valid
           if (tmp_h > last_t_ref_h) {
             // check if reference is correct
-            int is_correct = 0;
+            is_correct = 0;
             if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
             if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
             // update only if the reference is correct or we are out-of-sync
@@ -1080,6 +1083,7 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
   static uint16_t skip_S;        // skip the S phase (if joining in the middle of TA chain)
   static uint16_t starting_n_ta; // the first TA index in an epoch (if joining in the middle of TA chain)
   static time_h_t tmp_h;
+  static float expected_skew_f;
   PT_BEGIN(&pt);
 
   successful_scan = 0;
@@ -1180,7 +1184,7 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
 
     // Schedule the next epoch times
     t_ref_epoch_h = t_ref_epoch_h + LOW_TO_TIME_H(conf.period);
-    float expected_skew_f = 1.0f; // float fraction of the expected skew
+    expected_skew_f = 1.0f; // float fraction of the expected skew
     // if we synced during current epoch but not in S phase, take a partial skew
     if (last_epoch == epoch && last_n_ta != NULL_N_TA) {
       expected_skew_f -= (float)((float)(PHASE_A_OFFS(last_n_ta)) / (float)(conf.period));
