@@ -191,6 +191,8 @@ static time_h_t last_t_ref_h;        // last (glossy! not crystal!) reference ti
 static typeof(epoch) last_epoch;     // epoch of the last (glossy) synchronization
 static typeof(n_ta) last_n_ta;       // number of TA phase of the last (glossy) synchronization
 static skew_t period_skew_h;         // current estimation of clock skew over a period of length CRYSTAL_PERIOD
+static float d_skew_mean;            // current skew average
+static uint32_t n_samples;           // number of sample collected for the skew mean
 
 // when the node is considered out of sync
 #define IS_OUT_OF_SYNC() (epoch > last_epoch + 5)
@@ -413,6 +415,30 @@ static inline int is_ref_correct(time_h_t new_ref) {
   skew_error_h -= (skew_t)expected_skew_f;
   // return true if the reference is good
   return (- SKEW_ERROR_THRESHOLD < skew_error_h) && (skew_error_h < SKEW_ERROR_THRESHOLD);
+}
+
+
+// if the skew estimation is currently reliable
+#define is_skew_reliable() (n_samples > 100)
+
+// reset skew estimation
+#define skew_reset() do{\
+  d_skew_mean = 0; n_samples = 0;\
+} while(0);
+
+// skew estimation method
+static inline void skew_update(time_h_t new_ref) {
+  static skew_t new_skew;
+  static time_h_t time_interval_h;
+  // time interval from the last synchronization
+  time_interval_h = TIME_INTERVAL_H(epoch,n_ta,last_epoch,last_n_ta);
+  // get the skew we actually accumulated
+  new_skew = (skew_t)(new_ref - last_t_ref_h) - (skew_t)time_interval_h;
+  // update mean
+  n_samples++;
+  d_skew_mean +=
+    ((float)new_skew / (float)time_interval_h - d_skew_mean) / (float)n_samples;
+  period_skew_h = (float)(d_skew_mean * (float)LOW_TO_TIME_H(conf.period));
 }
 
 static inline void init_epoch_state() { // zero out epoch-related variables
@@ -790,10 +816,12 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
       // we "mask" n_ta value temporarely (should be NULL is S phase)
       typeof(n_ta) old_n_ta = n_ta; n_ta = NULL_N_TA;
       // check if reference is correct
-      int is_correct = is_ref_correct(tmp_h);
+      int is_correct = 0;
+      if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
+      if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
       n_ta = old_n_ta; // reset to the old value
       // update only if the reference is correct or we are out-of-sync
-      if ( is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
+      if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
         // update the epoch reference time
         t_ref_epoch_h = tmp_h;
         // update last_* variables
@@ -960,9 +988,11 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
           // check if ref is valid
           if (tmp_h > last_t_ref_h) {
             // check if reference is correct
-            int is_correct = is_ref_correct(tmp_h);
+            int is_correct = 0;
+            if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
+            if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
             // update only if the reference is correct or we are out-of-sync
-            if ( is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
+            if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
               // update the epoch reference time
               t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
               // update last_* variables
@@ -1122,6 +1152,7 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
       epoch ++;
       crystal_info.epoch = epoch;
       starting_n_ta = 0;
+      if (IS_OUT_OF_SYNC()) skew_reset();
 
       app_pre_S();
 
@@ -1230,6 +1261,7 @@ bool crystal_start(crystal_config_t* conf_)
   last_t_ref_h = 0;
   last_epoch = 0;
   last_n_ta = NULL_N_TA;
+  skew_reset();
 
   /* reset the protothread */
   //TBC: Is it needed?
