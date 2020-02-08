@@ -393,6 +393,13 @@ static inline int correct_ack_skew(rtimer_clock_t new_ref) {
 #endif
 }
 
+// update a triplet ref/epoch/n_ta at once
+#define update_ref(_name, new_ref, new_epoch, new_n_ta) do{ \
+  _name##_t_ref_h = new_ref; \
+  _name##_epoch = new_epoch; \
+  _name##_n_ta = new_n_ta; \
+} while(0)
+
 // skew error threshold, always >0
 #define SKEW_ERROR_THRESHOLD 64
 #define SKEW_ALPHA (0.1f)
@@ -704,8 +711,7 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref();
           t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
-          last_epoch = epoch;
-          last_n_ta = NULL_N_TA;
+          update_ref(last, 0, epoch, NULL_N_TA);
           successful_scan = 1;
           break; // exit the scanning
         }
@@ -724,8 +730,7 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
           t_ref_corrected = glossy_get_t_ref() - PHASE_A_OFFS(n_ta);
           t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
             - LOW_TO_TIME_H(PHASE_A_OFFS(n_ta));
-          last_epoch = epoch;
-          last_n_ta = n_ta;
+          update_ref(last, 0, epoch, n_ta);
           successful_scan = 1;
           break; // exit the scanning
         }
@@ -829,9 +834,7 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
         // update the epoch reference time
         t_ref_epoch_h = tmp_h;
         // update last_* variables
-        last_t_ref_h = tmp_h;
-        last_epoch = epoch;
-        last_n_ta = NULL_N_TA;
+        update_ref(last, tmp_h, epoch, NULL_N_TA);
       }
     }
   }
@@ -1000,9 +1003,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
               // update the epoch reference time
               t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
               // update last_* variables
-              last_t_ref_h = tmp_h;
-              last_epoch = epoch;
-              last_n_ta = n_ta;
+              update_ref(last, tmp_h, epoch, n_ta);
             }
           }
           synced_with_ack ++;
@@ -1262,9 +1263,7 @@ bool crystal_start(crystal_config_t* conf_)
   sync_missed = 0;
   period_skew = 0;
   period_skew_h = 0;
-  last_t_ref_h = 0;
-  last_epoch = 0;
-  last_n_ta = NULL_N_TA;
+  update_ref(last, 0, 0, NULL_N_TA);
   skew_reset();
 
   /* reset the protothread */
