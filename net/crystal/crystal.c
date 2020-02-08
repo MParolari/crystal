@@ -204,8 +204,12 @@ static typeof(n_ta) log_t_ref_ta;    // TA phase when log_t_ref_h is acquired
 // for skew logging
 #define LSI_MAX 5
 static uint8_t lsi;                     // log skew index
+static typeof(n_ta) log_lsi_n_ta[LSI_MAX];
 static skew_t log_skew_error[LSI_MAX];  // array of skew error values
 static uint8_t log_flag[LSI_MAX];
+// for estimation logging
+static skew_t log_period_skew_h[LSI_MAX];
+static uint32_t log_n_samples[LSI_MAX];
 
 // "null" value for last_n_ta (assuming it will never reach its maximum value)
 #define NULL_N_TA ( (typeof(last_n_ta))( ~((typeof(last_n_ta))0) ) )
@@ -426,11 +430,9 @@ static inline int is_ref_correct(time_h_t new_ref) {
   skew_error_h -= (skew_t)expected_skew_f;
   // log skew error
   if (lsi < LSI_MAX) {
+    log_lsi_n_ta[lsi] = n_ta;
     log_skew_error[lsi] = skew_error_h;
-    log_flag[lsi] = !(
-      (- SKEW_ERROR_THRESHOLD < skew_error_h) && (skew_error_h < SKEW_ERROR_THRESHOLD)
-    );
-    lsi++;
+    log_flag[lsi] = (- SKEW_ERROR_THRESHOLD < skew_error_h) && (skew_error_h < SKEW_ERROR_THRESHOLD);
   }
   // return true if the reference is good
   return (- SKEW_ERROR_THRESHOLD < skew_error_h) && (skew_error_h < SKEW_ERROR_THRESHOLD);
@@ -461,6 +463,11 @@ static inline void skew_update(time_h_t new_ref) {
     d_skew_mean = SKEW_ALPHA * ((float)new_skew / (float)time_interval_h)
       + (1.0f - SKEW_ALPHA) * d_skew_mean;
   period_skew_h = (float)(d_skew_mean * (float)LOW_TO_TIME_H(conf.period));
+  // log
+  if (lsi < LSI_MAX) {
+    log_period_skew_h[lsi] = period_skew_h;
+    log_n_samples[lsi] = n_samples;
+  }
 }
 
 static inline void init_epoch_state() { // zero out epoch-related variables
@@ -844,6 +851,7 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
       int is_correct = 0;
       if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
       if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
+      if (lsi < LSI_MAX) lsi++;
       n_ta = old_n_ta; // reset to the old value
       // update only if the reference is correct or we are out-of-sync
       if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
@@ -1019,6 +1027,7 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
             int is_correct = 0;
             if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
             if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
+            if (lsi < LSI_MAX) lsi++;
             // update only if the reference is correct or we are out-of-sync
             if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
               // update the epoch reference time
@@ -1346,7 +1355,8 @@ void crystal_print_epoch_logs() {
     printf("L %u %llu %u\n", epoch, log_t_ref_h, log_t_ref_ta);
     static int i;
     for (i=0; i < lsi; i++) {
-      printf("K %u %ld %u\n", epoch, log_skew_error[i], log_flag[i]);
+      printf("K %u %u %ld %u %ld %lu\n",
+        epoch, log_lsi_n_ta[i], log_skew_error[i], log_flag[i], log_period_skew_h[i], log_n_samples[i]);
     }
   }
 
