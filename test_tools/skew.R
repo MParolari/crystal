@@ -143,7 +143,7 @@ data <- data[data$epoch>=FIRST_EPOCH,]
 
 # x axis values
 data$X <- data$n_ta
-data[data$X == (2^16 -1),]$X <- (-1)
+if (any(data$X == (2^16 -1))) { data[data$X == (2^16 -1),]$X <- (-1) }
 data$X <- data$epoch * 10 + data$X + 1
 
 # open pdf
