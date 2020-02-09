@@ -1214,7 +1214,11 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
       // wait for the oscillator to stabilize
       WAIT_UNTIL(t_s_start - (GLOSSY_PRE_TIME + 16), &pt);
 
+      #ifdef CRYSTAL_NOS
+      app_post_S(0, NULL);
+      #else
       PT_SPAWN(&pt, &pt_s_node, s_node_thread(t, ptr));
+      #endif
     }
     skip_S = 0;
     n_ta = starting_n_ta;
@@ -1226,7 +1230,11 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
     }
     RADIO_OSC_OFF(); // deep sleep
 
+    #ifdef CRYSTAL_NOS
+    s_guard = CRYSTAL_LONG_GUARD;
+    #else
     s_guard = (!skew_estimated || sync_missed >= N_MISSED_FOR_INIT_GUARD)?CRYSTAL_INIT_GUARD:CRYSTAL_LONG_GUARD;
+    #endif
 
     // Schedule the next epoch times
     t_ref_epoch_h = t_ref_epoch_h + LOW_TO_TIME_H(conf.period);
