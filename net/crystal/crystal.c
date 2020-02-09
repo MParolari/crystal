@@ -462,8 +462,6 @@ static inline int is_ref_correct(time_h_t new_ref) {
 static inline void skew_update(time_h_t new_ref) {
   static skew_t new_skew;
   static time_h_t time_interval_h;
-  // if the est_* variable are not initialized, use last_*
-  if (est_t_ref_h == 0) {update_ref(est, last_t_ref_h, last_epoch, last_n_ta);}
   // time interval from the last synchronization
   time_interval_h = TIME_INTERVAL_H(epoch, n_ta, est_epoch, est_n_ta);
   if (time_interval_h >= SKEW_MIN_INTERVAL) {
@@ -706,6 +704,7 @@ static char root_main_thread(struct rtimer *t, void *ptr) {
 PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
 {
   static uint32_t max_scan_duration, scan_duration;
+  static time_h_t tmp_h;
   PT_BEGIN(&pt_scan);
   channel = get_channel_node_bootstrap(SCAN_RX_NOTHING);
 
@@ -714,6 +713,9 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
 
   // Scanning loop
   while (1) {
+    // if the overflow flag is true, leave time for the interrupt 
+    if (TACTL & TAIFG) { WAIT_UNTIL(RTIMER_NOW() + RTIMER_SECOND/1000, &pt_scan); }
+
 #if CRYSTAL_2420
     bzero(&glossy_S, sizeof(glossy_S)); // reset the Glossy timing info
 #endif
@@ -749,7 +751,8 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref();
           t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
-          update_ref(last, 0, epoch, NULL_N_TA);
+          update_ref(last, t_ref_epoch_h, epoch, NULL_N_TA);
+          update_ref(est, t_ref_epoch_h, epoch, NULL_N_TA);
           successful_scan = 1;
           break; // exit the scanning
         }
@@ -766,9 +769,10 @@ PT_THREAD(scan_thread(struct rtimer *t, void* ptr))
         
         if (IS_SYNCED()) {
           t_ref_corrected = glossy_get_t_ref() - PHASE_A_OFFS(n_ta);
-          t_ref_epoch_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h())
-            - LOW_TO_TIME_H(PHASE_A_OFFS(n_ta));
-          update_ref(last, 0, epoch, n_ta);
+          tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
+          t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(n_ta));
+          update_ref(last, tmp_h, epoch, n_ta);
+          update_ref(est, tmp_h, epoch, n_ta);
           successful_scan = 1;
           break; // exit the scanning
         }
@@ -860,23 +864,20 @@ PT_THREAD(s_node_thread(struct rtimer *t, void* ptr))
 
     // get the corrected reference time in high-resolution
     tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), t_ref_corrected, glossy_get_T_offset_h());
-    // check if the new ref is valid
-    if (tmp_h > last_t_ref_h) {
-      // we "mask" n_ta value temporarely (should be NULL is S phase)
-      typeof(n_ta) old_n_ta = n_ta; n_ta = NULL_N_TA;
-      // check if reference is correct
-      is_correct = 0;
-      if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
-      if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
-      if (lsi < LSI_MAX) lsi++;
-      n_ta = old_n_ta; // reset to the old value
-      // update only if the reference is correct or we are out-of-sync
-      if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
-        // update the epoch reference time
-        t_ref_epoch_h = tmp_h;
-        // update last_* variables
-        update_ref(last, tmp_h, epoch, NULL_N_TA);
-      }
+    // we "mask" n_ta value temporarely (should be NULL is S phase)
+    typeof(n_ta) old_n_ta = n_ta; n_ta = NULL_N_TA;
+    // check if reference is correct
+    is_correct = 0;
+    if (is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
+    if (!is_skew_reliable() || is_correct) skew_update(tmp_h);
+    if (lsi < LSI_MAX) lsi++;
+    n_ta = old_n_ta; // reset to the old value
+    // update only if the reference is correct or we are out-of-sync
+    if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() ) {
+      // update the epoch reference time
+      t_ref_epoch_h = tmp_h;
+      // update last_* variables
+      update_ref(last, tmp_h, epoch, NULL_N_TA);
     }
     // log the reference time
     log_t_ref_h = tmp_h;
@@ -1037,20 +1038,17 @@ PT_THREAD(ta_node_thread(struct rtimer *t, void* ptr))
 
           t_ref_corrected = N_TA_TO_REF(glossy_get_t_ref(), buf.ack_hdr.n_ta);
           tmp_h = TIME_H_T(glossy_get_t_ref_overflow(), glossy_get_t_ref(), glossy_get_T_offset_h());
-          // check if ref is valid
-          if (tmp_h > last_t_ref_h) {
-            // check if reference is correct
-            is_correct = 0;
-            if (last_t_ref_h != 0 && is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
-            if (last_t_ref_h != 0 && (!is_skew_reliable() || is_correct)) skew_update(tmp_h);
-            if (lsi < LSI_MAX) lsi++;
-            // update only if the reference is correct or we are out-of-sync
-            if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() || last_t_ref_h == 0 ) {
-              // update the epoch reference time
-              t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
-              // update last_* variables
-              update_ref(last, tmp_h, epoch, n_ta);
-            }
+          // check if reference is correct
+          is_correct = 0;
+          if (is_skew_reliable()) is_correct = is_ref_correct(tmp_h);
+          if (!is_skew_reliable() || is_correct) skew_update(tmp_h);
+          if (lsi < LSI_MAX) lsi++;
+          // update only if the reference is correct or we are out-of-sync
+          if ( !is_skew_reliable() || is_correct || IS_OUT_OF_SYNC() ) {
+            // update the epoch reference time
+            t_ref_epoch_h = tmp_h - LOW_TO_TIME_H(PHASE_A_OFFS(buf.ack_hdr.n_ta));
+            // update last_* variables
+            update_ref(last, tmp_h, epoch, n_ta);
           }
           // log only if we didn't sync previously during this epoch
           if (log_t_ref_h == 0) {
