@@ -114,6 +114,7 @@ def mk_env(power, channel, sink, num_senders, n_empty, cca):
     "-DCRYSTAL_CONF_BSTRAP_CHHOPPING=BSTRAP_%s"%boot_chop,
     "-DCRYSTAL_CONF_N_FULL_EPOCHS=%d"%full_epochs,
     ]
+    if no_S: cflags += ["-DCRYSTAL_NOS"]
 
     if logging:
         cflags += ["-DCRYSTAL_CONF_LOGLEVEL=CRYSTAL_LOGS_ALL"]
@@ -170,6 +171,7 @@ defaults = {
     #"boot_chop":"nohop",
     "logging":True,
     "seed":None,
+    "no_S":False,
     }
 
 set_defaults(pars, defaults)
@@ -197,6 +199,7 @@ for (power, channel, sink, num_senders, n_empty, cca, nodemap) in itertools.prod
     n_empty = NemptyTuple(*n_empty)
     cca = CcaTuple(*cca)
     simdir = "sink%03d_snd%02d_p%02d_c%02d_e%.2f_ns%02d_nt%02d_na%02d_ds%02d_dt%02d_da%02d_syna%d_pl%03d_r%02dy%02dz%02dx%02d_dyn%d_cca%d_%d_fe%02d_%s_%s_%s_B%s"%(sink, num_senders, power, channel, period, n_tx_s, n_tx_t, n_tx_a, dur_s, dur_t, dur_a, sync_ack, payload, n_empty.r, n_empty.y, n_empty.z, n_empty.x, dyn_nempty, cca.dbm, cca.counter, full_epochs, testbed, nodemap, chmap, boot_chop)
+    if no_S: simdir += "_noS"
     if os.path.isdir(simdir):
         continue
     try:
@@ -256,6 +259,7 @@ for (power, channel, sink, num_senders, n_empty, cca, nodemap) in itertools.prod
             p["chmap"] = chmap
             p["boot_chop"] = boot_chop
             p["full_epochs"] = full_epochs
+            p["no_S"] = 1 if no_S else 0
             header = " ".join(p.keys())
             values = " ".join([str(x) for x in p.values()])
             f.write(header)
