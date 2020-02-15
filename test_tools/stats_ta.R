@@ -130,12 +130,14 @@ rm(t)
 usend = unique(send[c("src", "seqn", "epoch")])
 # merging send records from both app and Crystal logs
 all_send = merge(asend[,c("src", "seqn", "epoch", "acked")], usend, by=c("src", "seqn", "epoch"), all=T)
+if(nrow(all_send)>0) {
 t = aggregate(epoch ~ src + seqn, all_send, FUN=length)
 colnames(t) <- c("src", "seqn", "n_epochs")
 if (max(t$n_epochs) > 1) {
   message("Inconsistent epoch numbers in app and Crystal logs")
   print(merge(all_send, t[t$n_epochs>1,]))
   quit()
+}
 }
 # at this point (src, seqn) are unique in all_send
 
