@@ -1230,11 +1230,7 @@ static char node_main_thread(struct rtimer *t, void *ptr) {
     }
     RADIO_OSC_OFF(); // deep sleep
 
-    #ifdef CRYSTAL_NOS
     s_guard = CRYSTAL_LONG_GUARD;
-    #else
-    s_guard = (!skew_estimated || sync_missed >= N_MISSED_FOR_INIT_GUARD)?CRYSTAL_INIT_GUARD:CRYSTAL_LONG_GUARD;
-    #endif
 
     // Schedule the next epoch times
     t_ref_epoch_h = t_ref_epoch_h + LOW_TO_TIME_H(conf.period);
