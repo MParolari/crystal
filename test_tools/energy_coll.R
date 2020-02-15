@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # minimum duration (in minutes) for tests (aka shorter tests will be ignored)
-MIN_DUR <- 0
+MIN_DUR <- 5
 
 # Input filenames
 TA_LOG_FILENAME <- "ta.log"
@@ -16,7 +16,7 @@ orig_dir <- getwd()
 
 # initialize data frame
 data <- data.frame(sink=numeric(), senders=numeric(), no_S=logical(),
-    ontime_mean=numeric(), ontime_max=numeric())
+    ontime_mean=numeric(), ontime_sd=numeric(), ontime_max=numeric())
 
 # get test directories
 dirs <- grep(pattern=file.path("^\\.",".*","data-[0-9]+"), list.dirs(), value=T)
@@ -46,7 +46,7 @@ for (dir in dirs) {
     
     # save data
     data[nrow(data)+1,] <- c(params$sink, params$senders, params$no_S,
-        mean(energy$ontime), max(energy$ontime))
+        mean(energy$ontime), ontime_sd=sd(energy$ontime), max(energy$ontime))
     message()
 }; rm(dir, params, energy, max_epoch)
 
@@ -58,7 +58,7 @@ if (nrow(data) == 0) { message("No data loaded"); quit() }
 
 # compute mean if multiple test are available for the same configuration
 data <- aggregate(
-    cbind(ontime_mean,ontime_max) ~ sink + senders + no_S, data=data, FUN=mean)
+    cbind(ontime_mean,ontime_sd,ontime_max) ~ sink + senders + no_S, data=data, FUN=mean)
 # sorting
 data <- data[order(data$sink,data$senders,data$no_S),]
 
@@ -90,6 +90,8 @@ for (sink in unique(data$sink)) {
     mean_plot <- ggplot(data=data[data$sink==sink,],
             aes(x=factor(senders), y=ontime_mean, fill=factor(S))) +
         geom_bar(stat="identity", position=position_dodge2(reverse=T)) +
+        geom_errorbar(width=0.25, position=position_dodge2(reverse=T),
+            aes(ymin=ontime_mean-ontime_sd,ymax=ontime_mean+ontime_sd)) +
         geom_text(aes(label=round(ontime_mean,2)), size=3, vjust=-0.1,
             position = position_dodge2(1, reverse=T) ) +
         theme(legend.position="top") + labs(fill="S phase:") +
