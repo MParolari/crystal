@@ -397,7 +397,7 @@ char start_tx_handler(struct rtimer *t, void *ptr) {
   jump = (128 - t_start_offset_h) << 1;
 
   // RTimer busy loop
-  while (RTIMER_NOW() != t_start_l);
+  while (RTIMER_CLOCK_LT(RTIMER_NOW(), t_start_l));
 
   // DCO offset delay
   asm volatile("add %[d], r0" : : [d] "m" (jump)); // jump above the nops
