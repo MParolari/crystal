@@ -10,7 +10,8 @@
 #endif
 
 #if CRYSTAL_2420
-#define CRYSTAL_INTER_PHASE_GAP (RTIMER_SECOND / 250) // 4 ms (for long packets)
+#define CRYSTAL_INTER_PHASE_GAP (RTIMER_SECOND / 200) // 5 ms (for long packets)
+//#define CRYSTAL_INTER_PHASE_GAP (RTIMER_SECOND / 250) // 4 ms (for long packets)
 //#define CRYSTAL_INTER_PHASE_GAP (RTIMER_SECOND / 500) // 2 ms (for short packets)
 #endif
 
